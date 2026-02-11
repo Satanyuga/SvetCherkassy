@@ -3,68 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Свет 4.1 Черкассы</title>
+    <title>График Света 4.1</title>
     <style>
-        body { background: #0b0b0b; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
-        .card { background: #161616; padding: 40px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; border: 1px solid #333; width: 85%; }
-        .status { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 10px; transition: 0.5s; }
-        .timer { font-size: 3.5rem; font-weight: 800; color: #00ffcc; text-shadow: 0 0 20px rgba(0,255,204,0.3); }
-        .group-label { color: #555; margin-top: 20px; font-weight: bold; }
-        .on { color: #00ff88; }
-        .off { color: #ff4d4d; }
+        body { background: #000; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #111; padding: 30px; border-radius: 20px; border: 1px solid #333; text-align: center; width: 90%; max-width: 400px; }
+        h1 { color: #00ffcc; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
+        .schedule-box { font-size: 1.5rem; margin: 20px 0; color: #00ffcc; font-weight: bold; line-height: 1.6; }
+        .group { color: #555; font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div class="card">
-        <div id="status" class="status">Синхронизация...</div>
-        <div id="timer" class="timer">00:00:00</div>
-        <div class="group-label">ГРУППА 4.1</div>
+        <h1>График отключений</h1>
+        <div id="schedule" class="schedule-box">Загрузка...</div>
+        <div class="group">ГРУППА 4.1</div>
     </div>
 
     <script>
-        async function update() {
+        async function loadSchedule() {
             try {
-                // Подтягиваем данные, которые записал сервер на Render
-                const response = await fetch('data.json?t=' + Date.now());
+                // Добавляем случайное число, чтобы файл не кешировался
+                const response = await fetch('data.json?t=' + Math.random());
                 const data = await response.json();
-                const schedule = data.schedule;
-
-                const now = new Date();
-                const currentTime = now.getHours() * 60 + now.getMinutes();
-                const ranges = schedule.match(/(\d{2}:\d{2})\s*[–-]\s*(\d{2}:\d{2})/g);
-                
-                let isOff = false;
-                let nextTime = null;
-
-                ranges.forEach(r => {
-                    const [s, e] = r.split(/[–-]/);
-                    const start = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]);
-                    let end = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
-                    if (end === 0) end = 1440;
-
-                    if (currentTime >= start && currentTime < end) {
-                        isOff = true;
-                        nextTime = end;
-                    } else if (start > currentTime && (!nextTime || start < nextTime)) {
-                        if (!isOff) nextTime = start;
-                    }
-                });
-
-                const diff = nextTime - currentTime;
-                const h = Math.floor(diff / 60);
-                const m = diff % 60;
-
-                const statusEl = document.getElementById('status');
-                statusEl.innerText = isOff ? "Тьма" : "Свет есть";
-                statusEl.className = "status " + (isOff ? "off" : "on");
-                document.getElementById('timer').innerText = h + "ч " + m + "м";
-                
+                document.getElementById('schedule').innerText = data.schedule;
             } catch (e) {
-                document.getElementById('status').innerText = "Ожидание данных...";
+                document.getElementById('schedule').innerText = "Нет данных";
             }
         }
-        setInterval(update, 30000);
-        update();
+        loadSchedule();
+        setInterval(loadSchedule, 60000); // Проверять обновление раз в минуту
     </script>
 </body>
 </html>
