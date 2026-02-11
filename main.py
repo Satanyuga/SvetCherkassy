@@ -7,12 +7,12 @@ import time
 from flask import Flask
 from telethon import TelegramClient, events
 
-# --- СЕРВЕР-ПИНГАТОР ---
+# --- СЕРВЕР-ПИНГАТОР (Твоя охрана) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "🤖 Адель на страже твоего света"
+    return "🤖 Адель на страже"
 
 @app.route('/ping')
 def ping():
@@ -31,7 +31,7 @@ def pinger():
         except:
             pass
 
-# --- ТЕЛЕГРАМ БОТ ---
+# --- НАСТРОЙКИ ---
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 API_ID = int(os.environ.get('TG_API_ID'))
 API_HASH = os.environ.get('TG_API_HASH')
@@ -42,8 +42,10 @@ CHANNEL_URL = 'https://t.me/pat_cherkasyoblenergo'
 client = TelegramClient('bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def update_github(new_schedule):
-    # Убираем только мусорные тире, оставляем все запятые и пробелы
+    # Приводим все тире к единому стандарту для сайта
     clean_data = new_schedule.replace('–', '-').replace('—', '-').strip()
+    # Убираем возможную запятую в самом конце, если она затесалась
+    clean_data = re.sub(r'[,\s]+$', '', clean_data)
     
     url = f"https://api.github.com/repos/{GH_REPO}/contents/data.json"
     headers = {"Authorization": f"token {GH_TOKEN}"}
@@ -51,30 +53,31 @@ def update_github(new_schedule):
     try:
         res = requests.get(url, headers=headers).json()
         sha = res.get('sha')
-        
         content_str = f'{{"schedule": "{clean_data}"}}'
         encoded = base64.b64encode(content_str.encode()).decode()
-        
-        payload = {"message": "Full schedule update", "content": encoded, "sha": sha}
+        payload = {"message": "Precise schedule update", "content": encoded, "sha": sha}
         requests.put(url, json=payload, headers=headers)
-        print(f"--- ГРАФИК ОБНОВЛЕН ПОЛНОСТЬЮ: {clean_data} ---")
+        print(f"--- ГРАФИК ОБНОВЛЕН: {clean_data} ---")
     except Exception as e:
         print(f"Ошибка GitHub: {e}")
 
-def parse_full_schedule(text):
-    # Ищем 4.1 и забираем ВСЁ до конца строки, включая запятые и пробелы
-    # Регулярка теперь видит всю твою последовательность времени
-    match = re.search(r"4\.1:\s*([\d:,\s\-\–\—]+)", text)
+def parse_precise(text):
+    # ЛОГИКА: Находим 4.1, забираем всё ДО начала 4.2
+    # Используем флаг re.DOTALL, чтобы точка ловила и переносы строк
+    match = re.search(r"4\.1:\s*(.*?)(?=4\.2|$)", text, re.DOTALL)
     if match:
-        return match.group(1).strip()
+        found_text = match.group(1).strip()
+        # Оставляем только цифры, двоеточия, тире, запятые и пробелы
+        # Это вычистит случайные слова, если они попадут в интервал
+        return found_text
     return None
 
 async def check_history():
     try:
         entity = await client.get_entity(CHANNEL_URL)
-        async for message in client.iter_messages(entity, limit=10):
+        async for message in client.iter_messages(entity, limit=15):
             if message.text:
-                data = parse_full_schedule(message.text)
+                data = parse_precise(message.text)
                 if data:
                     update_github(data)
                     return
@@ -84,7 +87,7 @@ async def check_history():
 @client.on(events.NewMessage(chats=CHANNEL_URL))
 async def handler(event):
     if event.text:
-        data = parse_full_schedule(event.text)
+        data = parse_precise(event.text)
         if data:
             update_github(data)
 
