@@ -60,14 +60,16 @@
             background: rgba(0,0,0,0.95); z-index: 200; justify-content: center; align-items: center;
         }
         .modal-content {
-            background: #111; padding: 25px; border-radius: 20px; text-align: center; width: 90%; max-width: 320px;
+            background: #111; padding: 20px; border-radius: 20px; text-align: center; width: 95%; max-width: 360px;
             border: 1px solid #333;
         }
-        .group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        /* Сетка на 12 кнопок (3 в ряд) */
+        .group-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
         .group-btn {
-            padding: 15px; background: #1a1a1a; border: 1px solid #333; color: #fff; 
-            border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem;
+            padding: 12px 5px; background: #1a1a1a; border: 1px solid #333; color: #fff; 
+            border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 0.9rem;
         }
+        .group-btn:active { background: #00ffcc; color: #000; }
 
         .notif-btn {
             background: #1a1a1a; color: #00ffcc; border: 1px solid #00ffcc; padding: 12px;
@@ -98,21 +100,27 @@
 
     <div id="group-modal">
         <div class="modal-content">
-            <h3 style="margin:0; color:#00ffcc;">ВАША ГРУППА?</h3>
+            <h3 style="margin:0; color:#00ffcc; font-size: 1.1rem;">ВЫБЕРИТЕ ОЧЕРЕДЬ</h3>
             <div class="group-grid">
                 <button class="group-btn" onclick="setGroup('1.1')">1.1</button>
+                <button class="group-btn" onclick="setGroup('1.2')">1.2</button>
                 <button class="group-btn" onclick="setGroup('2.1')">2.1</button>
+                <button class="group-btn" onclick="setGroup('2.2')">2.2</button>
                 <button class="group-btn" onclick="setGroup('3.1')">3.1</button>
+                <button class="group-btn" onclick="setGroup('3.2')">3.2</button>
                 <button class="group-btn" onclick="setGroup('4.1')">4.1</button>
+                <button class="group-btn" onclick="setGroup('4.2')">4.2</button>
                 <button class="group-btn" onclick="setGroup('5.1')">5.1</button>
+                <button class="group-btn" onclick="setGroup('5.2')">5.2</button>
                 <button class="group-btn" onclick="setGroup('6.1')">6.1</button>
+                <button class="group-btn" onclick="setGroup('6.2')">6.2</button>
             </div>
         </div>
     </div>
 
     <script>
         let fullData = {};
-        let userGroup = localStorage.getItem('userGroup') || "4.1";
+        let userGroup = localStorage.getItem('userGroup');
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
 
@@ -125,6 +133,11 @@
             renderSchedule();
         }
 
+        // Если группа не выбрана — открываем модалку сразу
+        if (!userGroup) { 
+            setTimeout(openModal, 500); 
+        }
+
         async function refreshData() {
             try {
                 const r = await fetch('data.json?v=' + Date.now());
@@ -134,23 +147,24 @@
         }
 
         function renderSchedule() {
+            if (!userGroup) return;
             document.getElementById('group-title').innerText = "ГРАФИК ОТКЛЮЧЕНИЙ " + userGroup;
             
-            // ЛОГИКА ИСПРАВЛЕНИЯ: берем либо по ключу группы, либо общий schedule
-            let raw = fullData[userGroup] || fullData["schedule"];
+            // Проверяем наличие данных именно для этой группы
+            let raw = fullData[userGroup];
             
             if (raw) {
                 const items = raw.split(',');
                 document.getElementById('sched-text').innerHTML = items.map(i => "⚡ " + i.trim()).join('<br>');
                 processLogic(raw);
             } else {
-                document.getElementById('sched-text').innerText = "ОБНОВИТЕ ДАННЫЕ В БОТЕ";
+                document.getElementById('sched-text').innerText = "ДАННЫЕ ОТСУТСТВУЮТ";
             }
         }
 
         function handleNotif() {
             if (Notification.permission === 'granted') {
-                alert('Уведомления включены!');
+                alert('Уведомления уже активны!');
             } else {
                 Notification.requestPermission().then(p => { if(p==='granted') location.reload(); });
             }
@@ -158,6 +172,7 @@
 
         function toMinutes(t) {
             const p = t.trim().split(':');
+            if (p.length < 2) return 0;
             return parseInt(p[0]) * 60 + parseInt(p[1]);
         }
 
@@ -200,8 +215,8 @@
             const now = new Date();
             const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
             document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
-            if (fullData[userGroup] || fullData["schedule"]) {
-                processLogic(fullData[userGroup] || fullData["schedule"]);
+            if (fullData[userGroup]) {
+                processLogic(fullData[userGroup]);
             }
         }
 
