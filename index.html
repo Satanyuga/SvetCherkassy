@@ -63,19 +63,22 @@
             background: #111; padding: 20px; border-radius: 20px; text-align: center; width: 95%; max-width: 360px;
             border: 1px solid #333;
         }
-        /* Сетка на 12 кнопок (3 в ряд) */
-        .group-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
+        .group-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; margin-bottom: 20px; }
         .group-btn {
             padding: 12px 5px; background: #1a1a1a; border: 1px solid #333; color: #fff; 
             border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 0.9rem;
         }
-        .group-btn:active { background: #00ffcc; color: #000; }
+        .group-btn.active { border-color: #00ffcc; color: #00ffcc; background: rgba(0, 255, 204, 0.05); }
 
+        .notif-section {
+            border-top: 1px solid #222; padding-top: 20px; text-align: left;
+        }
         .notif-btn {
             background: #1a1a1a; color: #00ffcc; border: 1px solid #00ffcc; padding: 12px;
-            border-radius: 14px; margin-top: 15px; cursor: pointer; font-size: 0.85rem; width: 100%; font-weight: bold;
+            border-radius: 12px; cursor: pointer; font-size: 0.8rem; width: 100%; font-weight: bold;
         }
-        .notif-btn.active { border-color: #ff4444; color: #ff4444; background: rgba(255, 68, 68, 0.05); }
+        .notif-btn.enabled { border-color: #ff4444; color: #ff4444; }
+        .notif-desc { font-size: 0.65rem; color: #555; margin-top: 8px; line-height: 1.3; }
     </style>
 </head>
 <body>
@@ -90,7 +93,6 @@
         <div class="group-header" id="group-title">ГРАФИК ОТКЛЮЧЕНИЙ</div>
         <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
         <div style="color: #444; text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; margin-top: 12px;">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
-        <button id="notif-btn" class="notif-btn" onclick="handleNotif()">🔔 Включить уведомления</button>
     </div>
 
     <div class="status-wrapper">
@@ -100,21 +102,17 @@
 
     <div id="group-modal">
         <div class="modal-content">
-            <h3 style="margin:0; color:#00ffcc; font-size: 1.1rem;">ВЫБЕРИТЕ ОЧЕРЕДЬ</h3>
-            <div class="group-grid">
-                <button class="group-btn" onclick="setGroup('1.1')">1.1</button>
-                <button class="group-btn" onclick="setGroup('1.2')">1.2</button>
-                <button class="group-btn" onclick="setGroup('2.1')">2.1</button>
-                <button class="group-btn" onclick="setGroup('2.2')">2.2</button>
-                <button class="group-btn" onclick="setGroup('3.1')">3.1</button>
-                <button class="group-btn" onclick="setGroup('3.2')">3.2</button>
-                <button class="group-btn" onclick="setGroup('4.1')">4.1</button>
-                <button class="group-btn" onclick="setGroup('4.2')">4.2</button>
-                <button class="group-btn" onclick="setGroup('5.1')">5.1</button>
-                <button class="group-btn" onclick="setGroup('5.2')">5.2</button>
-                <button class="group-btn" onclick="setGroup('6.1')">6.1</button>
-                <button class="group-btn" onclick="setGroup('6.2')">6.2</button>
+            <h3 style="margin:0; color:#00ffcc; font-size: 1.1rem;">НАСТРОЙКИ</h3>
+            <div class="group-grid" id="grid">
+                </div>
+
+            <div class="notif-section">
+                <button id="notif-btn" class="notif-btn" onclick="handleNotif()">🔔 ВКЛЮЧИТЬ УВЕДОМЛЕНИЯ</button>
+                <div class="notif-desc">
+                    * Уведомления приходят автоматически за 15 минут до начала и конца отключения.
+                </div>
             </div>
+            <button style="margin-top:20px; background:none; border:none; color:#555; cursor:pointer;" onclick="document.getElementById('group-modal').style.display='none'">ЗАКРЫТЬ</button>
         </div>
     </div>
 
@@ -122,57 +120,78 @@
         let fullData = {};
         let userGroup = localStorage.getItem('userGroup');
 
-        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+        // Регистрация SW для работы уведомлений
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                console.log('SW Registered');
+            });
+        }
 
-        function openModal() { document.getElementById('group-modal').style.display = 'flex'; }
+        function openModal() {
+            document.getElementById('group-modal').style.display = 'flex';
+            renderGrid();
+        }
+
+        function renderGrid() {
+            const groups = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2'];
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            groups.forEach(g => {
+                const btn = document.createElement('button');
+                btn.className = `group-btn ${userGroup === g ? 'active' : ''}`;
+                btn.innerText = g;
+                btn.onclick = () => setGroup(g);
+                grid.appendChild(btn);
+            });
+            
+            const nBtn = document.getElementById('notif-btn');
+            if (Notification.permission === 'granted') {
+                nBtn.innerText = "🔕 УВЕДОМЛЕНИЯ АКТИВНЫ";
+                nBtn.classList.add('enabled');
+            }
+        }
         
         function setGroup(g) {
             userGroup = g;
             localStorage.setItem('userGroup', g);
-            document.getElementById('group-modal').style.display = 'none';
+            renderGrid();
             renderSchedule();
         }
 
-        // Если группа не выбрана — открываем модалку сразу
-        if (!userGroup) { 
-            setTimeout(openModal, 500); 
-        }
+        if (!userGroup) { setTimeout(openModal, 500); }
 
         async function refreshData() {
             try {
                 const r = await fetch('data.json?v=' + Date.now());
                 fullData = await r.json();
                 renderSchedule();
-            } catch(e) { console.log("Ошибка загрузки данных"); }
+            } catch(e) { console.log("Data error"); }
         }
 
         function renderSchedule() {
             if (!userGroup) return;
             document.getElementById('group-title').innerText = "ГРАФИК ОТКЛЮЧЕНИЙ " + userGroup;
-            
-            // Проверяем наличие данных именно для этой группы
             let raw = fullData[userGroup];
-            
             if (raw) {
-                const items = raw.split(',');
-                document.getElementById('sched-text').innerHTML = items.map(i => "⚡ " + i.trim()).join('<br>');
+                document.getElementById('sched-text').innerHTML = raw.split(',').map(i => "⚡ " + i.trim()).join('<br>');
                 processLogic(raw);
             } else {
-                document.getElementById('sched-text').innerText = "ДАННЫЕ ОТСУТСТВУЮТ";
+                document.getElementById('sched-text').innerText = "ОЖИДАНИЕ ДАННЫХ...";
             }
         }
 
         function handleNotif() {
-            if (Notification.permission === 'granted') {
-                alert('Уведомления уже активны!');
-            } else {
-                Notification.requestPermission().then(p => { if(p==='granted') location.reload(); });
-            }
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    location.reload();
+                } else {
+                    alert("Доступ к уведомлениям заблокирован в браузере.");
+                }
+            });
         }
 
         function toMinutes(t) {
             const p = t.trim().split(':');
-            if (p.length < 2) return 0;
             return parseInt(p[0]) * 60 + parseInt(p[1]);
         }
 
@@ -208,21 +227,14 @@
                 const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
                 const s = (diff % 60).toString().padStart(2, '0');
                 tV.innerText = `${h}:${m}:${s}`;
-            } else { tV.innerText = "00:00:00"; tC.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН"; }
+            } else { tV.innerText = "00:00:00"; tC.innerText = "ГРАФИК ЗАВЕРШЕН"; }
         }
 
         function updateTime() {
             const now = new Date();
             const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
             document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
-            if (fullData[userGroup]) {
-                processLogic(fullData[userGroup]);
-            }
-        }
-
-        if (Notification.permission === 'granted') {
-            const b = document.getElementById('notif-btn');
-            b.innerText = "🔕 Уведомления активны"; b.classList.add('active');
+            if (fullData[userGroup]) processLogic(fullData[userGroup]);
         }
 
         setInterval(updateTime, 1000);
