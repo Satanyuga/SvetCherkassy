@@ -1,246 +1,444 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Svet Cherkassy</title>
-    <style>
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { 
-            background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            min-height: 100vh; margin: 0; padding: 20px; overflow-x: hidden;
-        }
-        .clock { position: absolute; top: 15px; right: 15px; border: 1px solid #00ffcc; color: #00ffcc; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
-        .settings-btn { position: absolute; top: 15px; left: 15px; font-size: 24px; cursor: pointer; z-index: 10; opacity: 0.7; }
+import os
+import json
+import time
+import threading
+import requests
+from flask import Flask, jsonify, send_from_directory
+from telebot import TeleBot, types
+import re
+import logging
+from datetime import datetime
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Украинские месяцы для парсинга
+UA_MONTHS = {
+    'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4,
+    'травня': 5, 'червня': 6, 'липня': 7, 'серпня': 8,
+    'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
+}
+
+# --- КОНФИГУРАЦИЯ ---
+ADMIN_ID = 815422710  
+TOKEN = os.environ.get("BOT_TOKEN")
+GITHUB_TOKEN = os.environ.get("GH_TOKEN")  # Твоя переменная в Render
+GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")  # Можно задать вручную или брать из Render
+APP_URL = "https://svetcherkassy.onrender.com" 
+
+app = Flask(__name__)
+DATA_FILE = 'data.json'
+USERS_FILE = 'users.json'
+
+bot = TeleBot(TOKEN, threaded=False) if TOKEN else None
+
+# --- ПАРСИНГ ДАТЫ ---
+def parse_date_from_message(text):
+    """
+    Парсит дату из украинского текста
+    Примеры: '12 лютого', '13 лютого' → '12.02.2026', '13.02.2026'
+    """
+    current_year = datetime.now().year
+    
+    # Ищем паттерн: число + украинский месяц
+    pattern = r'(\d{1,2})\s+(' + '|'.join(UA_MONTHS.keys()) + r')'
+    match = re.search(pattern, text.lower())
+    
+    if match:
+        day = int(match.group(1))
+        month_name = match.group(2)
+        month = UA_MONTHS[month_name]
         
-        /* ВКЛАДКИ */
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab { 
-            background: #222; padding: 10px 20px; border-radius: 10px; cursor: pointer; 
-            border: 1px solid #444; font-size: 14px; transition: all 0.3s;
+        date_str = f"{day:02d}.{month:02d}.{current_year}"
+        logger.info(f"📅 Распознана дата: {date_str}")
+        return date_str
+    
+    return None
+
+# --- АВТОПИНГ (КАК В ТВОЕМ index.js) ---
+def keep_alive():
+    """Пингует сам себя каждые 5 минут чтобы Render не уснул"""
+    while True:
+        try:
+            time.sleep(300)  # 5 минут
+            requests.get(f"{APP_URL}/ping", timeout=10)
+            logger.info("🏓 Автопинг выполнен")
+        except Exception as e:
+            logger.error(f"❌ Ошибка автопинга: {e}")
+
+# --- ФАЙЛЫ ---
+def load_json(filename):
+    if not os.path.exists(filename): 
+        return {}
+    try:
+        with open(filename, 'r', encoding='utf-8') as f: 
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки {filename}: {e}")
+        return {}
+
+def save_json(filename, data):
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"✅ Сохранено в {filename}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения {filename}: {e}")
+        return False
+
+def update_github_file(content):
+    """Обновляет data.json на GitHub для отображения на сайте"""
+    if not GITHUB_TOKEN:
+        logger.warning("⚠️ GH_TOKEN не установлен - файл не обновится на сайте!")
+        return False
+    
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data.json"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
         }
-        .tab.active { background: #00ffcc; color: #000; border-color: #00ffcc; font-weight: bold; }
         
-        #date-label { color: #00ffcc; font-size: 16px; margin-bottom: 10px; text-align: center; font-weight: bold; }
-        #status-label { color: #888; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; text-align: center; }
+        # Получаем SHA текущего файла
+        response = requests.get(url, headers=headers, timeout=10)
+        sha = response.json().get("sha") if response.status_code == 200 else None
         
-        .countdown { 
-            font-size: 20vw; font-weight: 900; font-family: 'Courier New', monospace; margin: 10px 0 20px 0; line-height: 1; text-align: center;
-        }
-        @media (min-width: 600px) { .countdown { font-size: 100px; } }
+        # Кодируем содержимое в base64
+        import base64
+        content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
+        content_b64 = base64.b64encode(content_bytes).decode('utf-8')
         
-        .red { color: #ff4444; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
-        .green { color: #00ff66; text-shadow: 0 0 20px rgba(0,255,0,0.4); }
+        # Отправляем на GitHub
+        data = {
+            "message": "🔄 Обновление графиков от бота",
+            "content": content_b64,
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
         
-        .card { 
-            background: #161616; padding: 25px; border-radius: 20px; width: 100%; max-width: 360px; 
-            border: 1px solid #333; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            backdrop-filter: blur(10px);
-        }
-        .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; text-align: center; letter-spacing: 1px; }
-        .schedule-text { font-size: 18px; color: #ffcc00; font-weight: bold; line-height: 1.8; text-align: center; }
-
-        #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
-        .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0; }
-        .g-btn { background:#222; border:1px solid #444; color:#fff; padding:12px 5px; border-radius:12px; cursor:pointer; font-size: 14px; }
-        .g-btn.active { border-color:#00ffcc; color:#00ffcc; background:rgba(0,255,204,0.1); }
-        .close-btn { width: 100%; padding: 15px; background: #00ffcc; border: none; color: #000; font-weight: bold; border-radius: 12px; margin-top: 10px; cursor: pointer; }
-    </style>
-</head>
-<body>
-
-    <div class="settings-btn" onclick="document.getElementById('modal').style.display='flex'">⚙️</div>
-    <div class="clock" id="clock">--:--:--</div>
-
-    <!-- ВКЛАДКИ -->
-    <div class="tabs">
-        <div class="tab active" id="tab-today" onclick="switchTab('today')">Сегодня</div>
-        <div class="tab" id="tab-tomorrow" onclick="switchTab('tomorrow')">Завтра</div>
-    </div>
-
-    <div id="date-label">График на: --.--.----</div>
-    <div id="status-label">Загрузка...</div>
-    <div id="timer" class="countdown">00:00:00</div>
-
-    <div class="card">
-        <div class="card-header"><span id="current-group">ГРУППА --</span></div>
-        <div id="sched-display" class="schedule-text">Синхронизация с ботом...</div>
-    </div>
-
-    <div id="modal">
-        <div class="modal-box">
-            <h3 style="margin-top:0">ВАША ОЧЕРЕДЬ</h3>
-            <div class="grid" id="grid"></div>
-            <button class="close-btn" onclick="document.getElementById('modal').style.display='none'">СОХРАНИТЬ</button>
-        </div>
-    </div>
-
-    <script>
-        let DATA = {};
-        let GROUP = localStorage.getItem('userGroup') || "4.1";
-        let CURRENT_TAB = 'today';
-
-        function parseTime(t) {
-            t = t.trim().replace(/[^\d:]/g, '');
-            let p = t.split(':');
-            let h = parseInt(p[0]) || 0;
-            let m = p[1] ? parseInt(p[1]) : 0;
-            return h * 60 + m;
-        }
-
-        function getToday() {
-            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
-            let day = now.getDate().toString().padStart(2, '0');
-            let month = (now.getMonth() + 1).toString().padStart(2, '0');
-            let year = now.getFullYear();
-            return `${day}.${month}.${year}`;
-        }
-
-        function getTomorrow() {
-            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
-            now.setDate(now.getDate() + 1);
-            let day = now.getDate().toString().padStart(2, '0');
-            let month = (now.getMonth() + 1).toString().padStart(2, '0');
-            let year = now.getFullYear();
-            return `${day}.${month}.${year}`;
-        }
-
-        function switchTab(tab) {
-            CURRENT_TAB = tab;
-            document.getElementById('tab-today').classList.toggle('active', tab === 'today');
-            document.getElementById('tab-tomorrow').classList.toggle('active', tab === 'tomorrow');
-            render();
-        }
-
-        async function updateData() {
-            try {
-                let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?nocache=' + Date.now());
-                DATA = await r.json();
-                console.log('Данные загружены:', DATA);
-                render();
-            } catch (e) { 
-                console.error("Ошибка загрузки данных:", e);
-                try {
-                    let r2 = await fetch('/data.json?nocache=' + Date.now());
-                    DATA = await r2.json();
-                    console.log('Данные загружены локально:', DATA);
-                    render();
-                } catch (e2) {
-                    console.error("Ошибка загрузки локальных данных:", e2);
-                }
-            }
-        }
-
-        function render() {
-            let targetDate = CURRENT_TAB === 'today' ? getToday() : getTomorrow();
-            document.getElementById('date-label').innerText = `График на: ${targetDate}`;
-            document.getElementById('current-group').innerText = `ГРУППА ${GROUP}`;
+        response = requests.put(url, headers=headers, json=data, timeout=15)
+        
+        if response.status_code in [200, 201]:
+            logger.info("✅ data.json обновлен на GitHub!")
+            return True
+        else:
+            logger.error(f"❌ Ошибка GitHub: {response.status_code} - {response.text}")
+            return False
             
-            let disp = document.getElementById('sched-display');
-            let sched = null;
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления GitHub: {e}")
+        return False
 
-            if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                sched = DATA.dates[targetDate][GROUP];
-            }
+# --- ПАРСИНГ ГРАФИКА ---
+def parse_schedule_message(text):
+    """
+    Парсит сообщение формата:
+    1.1: 01:00 – 04:30, 06:30 – 10:30, 13:00 – 16:30, 18:30 – 22:30
+    2.1: 00:00 – 01:00, 03:30 – 07:00, ...
+    """
+    schedules = {}
+    
+    # Ищем строки вида "X.X: время"
+    lines = text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
             
-            if (sched) {
-                disp.innerHTML = sched.split(',').map(s => `⚡ ${s.trim()}`).join('<br>');
-                calculate(sched);
-            } else {
-                disp.innerText = "График еще не сформирован";
-                document.getElementById('timer').innerText = "00:00:00";
-                document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
-            }
-
-            let grid = document.getElementById('grid');
-            grid.innerHTML = '';
-            ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2'].forEach(g => {
-                let b = document.createElement('button');
-                b.className = `g-btn ${g === GROUP ? 'active' : ''}`;
-                b.innerText = g;
-                b.onclick = () => { GROUP = g; localStorage.setItem('userGroup', g); render(); };
-                grid.appendChild(b);
-            });
-        }
-
-        function calculate(schedStr) {
-            if (CURRENT_TAB !== 'today') {
-                document.getElementById('timer').innerText = "00:00:00";
-                document.getElementById('status-label').innerText = "График на завтра";
-                return;
-            }
-
-            let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
-            let cur = kiev.getHours() * 60 + kiev.getMinutes();
-            let sec = kiev.getSeconds();
-
-            let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+        # Паттерн: "1.1:" или "1.1 " в начале строки, затем время
+        match = re.match(r'^(\d+\.\d+)\s*:?\s*(.+)$', line)
+        
+        if match:
+            group = match.group(1).strip()
+            schedule_text = match.group(2).strip()
             
-            console.log('График:', schedStr);
-            console.log('Найденные интервалы:', ranges);
+            # Проверяем, что в расписании есть временные диапазоны
+            if re.search(r'\d{1,2}:\d{2}', schedule_text):
+                schedules[group] = schedule_text
+                logger.info(f"📋 Распознана очередь {group}: {schedule_text[:50]}...")
+    
+    return schedules
+
+# --- МЕНЮ ---
+def get_menu(uid):
+    users = load_json(USERS_FILE)
+    u_data = users.get(str(uid), {})
+    grp = u_data.get('group', 'Не выбрана')
+    is_on = u_data.get('notif_15', False)
+    
+    notif_text = f"🔔 Уведомлять о изменениях: {'✅ ВКЛ' if is_on else '❌ ВЫКЛ'}"
+    
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(f"👥 Моя очередь: {grp}")
+    markup.add(notif_text)
+    return markup
+
+if bot:
+    # --- АДМИН (ТВОЙ ID) ---
+    @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
+    def admin_logic(message):
+        text = message.text
+        if not text: 
+            return
+
+        # Если это команды меню - обрабатываем как обычный юзер
+        if "Моя очередь" in text or "Уведомлять о изменениях" in text:
+            user_logic(message)
+            return
+
+        logger.info(f"\n📨 Получено сообщение от админа (ID {ADMIN_ID})")
+        
+        # Парсим дату из сообщения
+        date_str = parse_date_from_message(text)
+        if not date_str:
+            logger.warning("⚠️ Не удалось распознать дату в сообщении")
+            bot.reply_to(message, "⚠️ Не удалось распознать дату.\nУкажите дату в формате: '12 лютого' или '13 лютого'")
+            return
+        
+        # Парсинг графика
+        parsed_schedules = parse_schedule_message(text)
+        
+        if not parsed_schedules:
+            bot.reply_to(message, "⚠️ Не удалось распознать графики.\n\nФормат:\n1.1: 01:00 – 04:30, 06:30 – 10:30\n2.1: 00:00 – 01:00, 03:30 – 07:00")
+            logger.warning("❌ Графики не распознаны")
+            return
+        
+        # Загружаем текущие данные
+        data = load_json(DATA_FILE)
+        
+        # Создаем структуру с датой если её еще нет
+        if not isinstance(data, dict) or 'dates' not in data:
+            data = {'dates': {}}
+        
+        # Создаем запись для даты если её нет
+        if date_str not in data['dates']:
+            data['dates'][date_str] = {}
+        
+        updated_groups = []
+        
+        # Обновляем графики для конкретной даты
+        for group, schedule in parsed_schedules.items():
+            data['dates'][date_str][group] = schedule
+            updated_groups.append(group)
+        
+        # Сохраняем локально
+        if save_json(DATA_FILE, data):
+            logger.info(f"✅ Обновлены очереди для {date_str}: {', '.join(updated_groups)}")
             
-            let intervals = ranges.map(r => {
-                let [s, e] = r.split(/[–\-—]/).map(parseTime);
-                return {start: s, end: e};
-            }).sort((a,b) => a.start - b.start);
-
-            console.log('Распарсенные интервалы:', intervals);
-            console.log('Текущее время (минуты):', cur);
-
-            let isOff = false, target = null;
+            # Обновляем на GitHub
+            github_success = update_github_file(data)
             
-            for (let i of intervals) {
-                if (cur >= i.start && cur < i.end) { 
-                    isOff = true; 
-                    target = i.end; 
-                    console.log('ОТКЛЮЧЕНИЕ! До включения:', target - cur, 'минут');
-                    break; 
-                }
-            }
+            # Подтверждение админу
+            confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
+            confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
+            confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GH_TOKEN)'}\n\n"
             
-            if (!isOff) {
-                let next = intervals.find(i => i.start > cur);
-                if (next) {
-                    target = next.start;
-                    console.log('Свет есть. До отключения:', target - cur, 'минут');
-                } else {
-                    console.log('График на сегодня закончен');
-                }
-            }
-
-            let tEl = document.getElementById('timer');
-            let lEl = document.getElementById('status-label');
+            bot.reply_to(message, confirmation)
             
-            lEl.innerText = isOff ? "Света не будет еще:" : (target ? "Свет будет еще:" : "График окончен");
-            tEl.className = "countdown " + (isOff ? "red" : "green");
-
-            if (target) {
-                let diff = (target - cur) * 60 - sec;
-                if (diff < 0) diff = 0;
-                let h = Math.floor(diff / 3600).toString().padStart(2,'0');
-                let m = Math.floor((diff % 3600) / 60).toString().padStart(2,'0');
-                let s = (diff % 60).toString().padStart(2,'0');
-                tEl.innerText = `${h}:${m}:${s}`;
-            } else { 
-                tEl.innerText = "00:00:00"; 
-            }
-        }
-
-        setInterval(() => {
-            document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            # УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ
+            users = load_json(USERS_FILE)
+            notified_count = 0
             
-            if (CURRENT_TAB === 'today') {
-                let targetDate = getToday();
-                if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                    calculate(DATA.dates[targetDate][GROUP]);
-                }
-            }
-        }, 1000);
+            for uid_str, u_data in users.items():
+                user_group = u_data.get('group')
+                
+                if user_group in updated_groups:
+                    try:
+                        schedule_text = data['dates'][date_str][user_group]
+                        notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
+                        notification += f"📍 Ваша очередь: {user_group}\n\n"
+                        notification += f"⚡ Отключения:\n{schedule_text}"
+                        
+                        bot.send_message(int(uid_str), notification)
+                        notified_count += 1
+                        logger.info(f"✅ Уведомление отправлено пользователю {uid_str} (очередь {user_group})")
+                        time.sleep(0.05)  # Чтобы не словить лимит Telegram
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось отправить пользователю {uid_str}: {e}")
+            
+            # Итоговый отчет админу
+            report = f"📊 Уведомлено пользователей: {notified_count}"
+            bot.send_message(ADMIN_ID, report)
+            logger.info(f"\n✅ Обработка завершена: {notified_count} уведомлений отправлено")
+        else:
+            bot.reply_to(message, "❌ Ошибка сохранения графиков")
 
-        updateData();
-        setInterval(updateData, 10000);
-    </script>
-</body>
-</html>
+    # --- ЮЗЕРЫ ---
+    @bot.message_handler(commands=['start'])
+    def start(message):
+        uid = str(message.from_user.id)
+        users = load_json(USERS_FILE)
+        
+        # Инициализируем нового пользователя
+        if uid not in users:
+            users[uid] = {'group': None, 'notif_15': False}
+            save_json(USERS_FILE, users)
+        
+        welcome = "⚡ Добро пожаловать в бот мониторинга отключений света!\n\n"
+        welcome += "Выберите вашу очередь через меню ниже."
+        
+        bot.send_message(message.chat.id, welcome, reply_markup=get_menu(message.from_user.id))
+
+    @bot.message_handler(func=lambda m: True)
+    def user_logic(message):
+        uid = str(message.from_user.id)
+        msg_text = message.text
+
+        if "Моя очередь" in msg_text:
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            gs = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2']
+            btns = [types.InlineKeyboardButton(g, callback_data=f"set_g_{g}") for g in gs]
+            markup.add(*btns)
+            bot.send_message(message.chat.id, "Выберите очередь:", reply_markup=markup)
+            
+        elif "Уведомлять о изменениях" in msg_text:
+            users = load_json(USERS_FILE)
+            if uid not in users: 
+                users[uid] = {'group': None, 'notif_15': False}
+            
+            users[uid]['notif_15'] = not users[uid]['notif_15']
+            save_json(USERS_FILE, users)
+            
+            status = "ВКЛЮЧЕНЫ ✅" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНЫ ❌"
+            bot.send_message(message.chat.id, f"🔔 Уведомления об изменениях {status}", reply_markup=get_menu(uid))
+        else:
+            # Если это не админ и не команда меню
+            if message.from_user.id != ADMIN_ID:
+                bot.send_message(message.chat.id, "⛔ Используйте кнопки меню ниже.")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
+    def callback_handler(call):
+        group = call.data.replace("set_g_", "")
+        uid = str(call.from_user.id)
+        users = load_json(USERS_FILE)
+        
+        if uid not in users: 
+            users[uid] = {'group': None, 'notif_15': False}
+            
+        users[uid]['group'] = group
+        save_json(USERS_FILE, users)
+        
+        bot.answer_callback_query(call.id, f"✅ Очередь {group}")
+        bot.edit_message_text(f"✅ Выбрана очередь: {group}", call.message.chat.id, call.message.message_id)
+        
+        # Показываем график на сегодня
+        data = load_json(DATA_FILE)
+        today = datetime.now().strftime("%d.%m.%Y")
+        
+        schedule = "График пока не установлен"
+        if isinstance(data, dict) and 'dates' in data:
+            if today in data['dates'] and group in data['dates'][today]:
+                schedule = data['dates'][today][group]
+        
+        info = f"📍 Ваша очередь: {group}\n"
+        info += f"📅 График на {today}\n\n"
+        info += f"⚡ Отключения:\n{schedule}"
+        bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
+
+# --- ЗАПУСК БОТА ---
+def start_bot_polling():
+    """Запуск бота с обработкой ошибок и автоперезапуском"""
+    if not bot:
+        logger.error("❌ Бот не создан - проверь BOT_TOKEN")
+        return
+    
+    retry_delay = 5
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"🔄 Попытка запуска бота #{attempt + 1}")
+            
+            # Принудительно удаляем webhook
+            bot.delete_webhook(drop_pending_updates=True)
+            time.sleep(2)
+            
+            # Запускаем polling
+            logger.info("✅ Бот запущен в режиме polling")
+            bot.infinity_polling(
+                timeout=60,
+                long_polling_timeout=60,
+                skip_pending=True,
+                allowed_updates=['message', 'callback_query']
+            )
+            
+            # Если дошли сюда - polling остановился нормально
+            break
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка бота: {e}")
+            
+            if "409" in str(e) or "Conflict" in str(e):
+                logger.warning("⚠️ Конфликт 409 - другой процесс использует токен")
+                logger.info(f"⏳ Жду {retry_delay} сек перед повтором...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Увеличиваем задержку
+            else:
+                logger.error("❌ Критическая ошибка, перезапуск через 10 сек...")
+                time.sleep(10)
+
+# --- WEB ---
+@app.route('/')
+def index(): 
+    return send_from_directory('.', 'index.html')
+
+@app.route('/data.json')
+def get_data(): 
+    return jsonify(load_json(DATA_FILE))
+
+@app.route('/manifest.json')
+def manifest():
+    return send_from_directory('.', 'manifest.json')
+
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory('.', 'sw.js')
+
+@app.route('/ping')
+def ping(): 
+    return "PONG"
+
+@app.route('/status')
+def status():
+    """Отладочный endpoint для проверки состояния"""
+    data = load_json(DATA_FILE)
+    users = load_json(USERS_FILE)
+    
+    return jsonify({
+        "schedules_count": len(data),
+        "users_count": len(users),
+        "github_token_set": bool(GITHUB_TOKEN),
+        "bot_token_set": bool(TOKEN),
+        "app_url": APP_URL
+    })
+
+if __name__ == '__main__':
+    print("\n" + "="*60)
+    print("🚀 ЗАПУСК СЕРВИСА")
+    print("="*60)
+    print(f"✅ BOT_TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GH_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GH_REPO: {GITHUB_REPO}")
+    print(f"✅ ADMIN_ID: {ADMIN_ID}")
+    print(f"🌐 URL: {APP_URL}")
+    print("="*60 + "\n")
+    
+    # Запускаем автопинг в отдельном потоке
+    ping_thread = threading.Thread(target=keep_alive, daemon=True)
+    ping_thread.start()
+    logger.info("🏓 Автопинг активирован (каждые 5 минут)")
+    
+    # Запускаем бота в отдельном потоке
+    if bot:
+        bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
+        bot_thread.start()
+        time.sleep(3)  # Даем боту время на запуск
+    
+    # Запускаем Flask
+    logger.info("🌐 Запуск веб-сервера...")
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
