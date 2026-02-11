@@ -3,37 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Svet 4.1 Control</title>
+    <title>Svet 4.1 App</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a0a0a">
+    
     <style>
-        body { background: #0a0a0a; color: #fff; font-family: 'Segoe UI', sans-serif; height: 100vh; margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .clock { position: absolute; top: 20px; right: 20px; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px 10px; border-radius: 5px; font-family: monospace; }
+        body { 
+            background: #0a0a0a; 
+            color: #fff; 
+            font-family: 'Segoe UI', Roboto, sans-serif; 
+            height: 100vh; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            overflow: hidden;
+        }
         
-        .countdown { font-size: 3.5rem; font-weight: bold; margin-bottom: 5px; font-family: monospace; transition: all 0.3s; }
+        .clock { 
+            position: absolute; 
+            top: 20px; 
+            right: 20px; 
+            color: #00ffcc; 
+            border: 1px solid #00ffcc; 
+            padding: 5px 10px; 
+            border-radius: 5px; 
+            font-family: monospace; 
+            font-size: 0.9rem;
+        }
+        
+        .countdown { 
+            font-size: 4rem; 
+            font-weight: bold; 
+            margin-bottom: 5px; 
+            font-family: monospace; 
+        }
+        
         .timer-red { color: #ff4444; text-shadow: 0 0 15px #ff4444; }
         .timer-green { color: #00ff66; text-shadow: 0 0 15px #00ff66; }
-        .timer-label { font-size: 0.9rem; color: #888; text-transform: uppercase; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px; }
-
-        .card { background: #111; padding: 30px; border-radius: 20px; border: 1px solid #222; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 85%; max-width: 450px; }
-        .schedule { font-size: 1.6rem; color: #ffcc00; font-weight: bold; margin: 20px 0; line-height: 1.8; text-align: left; display: inline-block; }
-        .group-label { color: #444; text-transform: uppercase; letter-spacing: 3px; font-size: 0.7rem; margin-top: 10px; }
         
-        .status-container { position: absolute; bottom: 20px; left: 20px; text-align: left; font-size: 0.7rem; color: #666; }
-        .status-item { margin: 5px 0; display: flex; align-items: center; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
-        .online { background: #00ff66; box-shadow: 0 0 5px #00ff66; }
-        .offline { background: #ff4444; box-shadow: 0 0 5px #ff4444; }
+        .timer-label { 
+            font-size: 1rem; 
+            color: #888; 
+            text-transform: uppercase; 
+            margin-bottom: 25px; 
+            font-weight: bold; 
+            letter-spacing: 2px;
+        }
+
+        .card { 
+            background: #111; 
+            padding: 30px; 
+            border-radius: 25px; 
+            border: 1px solid #222; 
+            text-align: center; 
+            box-shadow: 0 15px 40px rgba(0,0,0,0.7); 
+            width: 85%; 
+            max-width: 450px; 
+        }
+        
+        .schedule { 
+            font-size: 1.8rem; 
+            color: #ffcc00; 
+            font-weight: bold; 
+            margin: 15px 0; 
+            line-height: 1.8; 
+            text-align: left; 
+            display: inline-block;
+        }
+        
+        .group-label { 
+            color: #444; 
+            text-transform: uppercase; 
+            letter-spacing: 3px; 
+            font-size: 0.7rem; 
+            margin-top: 15px; 
+        }
+        
+        .status-container { 
+            position: absolute; 
+            bottom: 20px; 
+            left: 20px; 
+            text-align: left; 
+            font-size: 0.75rem; 
+            color: #555; 
+        }
+        
+        .status-item { margin: 6px 0; display: flex; align-items: center; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; margin-right: 12px; }
+        .online { background: #00ff66; box-shadow: 0 0 8px #00ff66; }
+        .offline { background: #ff4444; box-shadow: 0 0 8px #ff4444; }
+
+        button.notif-btn {
+            background: #222;
+            color: #888;
+            border: 1px solid #333;
+            padding: 8px 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body>
+
     <div class="clock" id="kiev-time">KIEV: --:--:--</div>
 
     <div id="timer-val" class="countdown">00:00:00</div>
     <div id="timer-comment" class="timer-label">СИНХРОНИЗАЦИЯ...</div>
 
     <div class="card">
-        <div style="color: #333; font-size: 0.7rem; margin-bottom: 10px; letter-spacing: 2px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
+        <div style="color: #444; font-size: 0.7rem; margin-bottom: 15px; letter-spacing: 3px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
         <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
         <div class="group-label">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
+        
+        <button class="notif-btn" onclick="requestNotif()">🔔 Включить уведомления</button>
     </div>
 
     <div class="status-container">
@@ -43,6 +130,23 @@
 
     <script>
         let currentSchedule = "";
+
+        // Регистрация Service Worker для PWA и уведомлений
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(() => {
+                console.log('SW зарегистрирован');
+            });
+        }
+
+        function requestNotif() {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        alert('Уведомления включены! Теперь ты будешь получать алерты.');
+                    }
+                });
+            }
+        }
 
         function updateTime() {
             const now = new Date();
@@ -61,19 +165,18 @@
                     const formatted = d.schedule.split(',').map(i => "⚡ " + i.trim()).join('<br>');
                     document.getElementById('sched-text').innerHTML = formatted;
                 }
-            } catch(e) { console.error("Ошибка загрузки данных"); }
+            } catch(e) { console.error("Ошибка сети"); }
         }
 
         function toMinutes(timeStr) {
-            const [h, m] = timeStr.trim().split(':').map(Number);
-            return h * 60 + m;
+            const parts = timeStr.trim().split(':');
+            return parseInt(parts[0]) * 60 + parseInt(parts[1]);
         }
 
         function processLogic() {
             if (!currentSchedule) return;
 
             const now = new Date();
-            // Получаем точное время в Киеве в минутах и секундах
             const kievTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             const curMin = kievTime.getHours() * 60 + kievTime.getMinutes();
             const curSec = kievTime.getSeconds();
@@ -81,13 +184,12 @@
             const intervals = currentSchedule.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
             let parsedIntervals = intervals.map(range => {
                 const [start, end] = range.split('-').map(toMinutes);
-                return { start, end: end === 0 ? 1440 : end };
+                return { start, end: (end === 0 || end < start) ? 1440 : end };
             }).sort((a, b) => a.start - b.start);
 
             let isOff = false;
             let targetMin = null;
 
-            // Проверяем, находимся ли мы СЕЙЧАС в периоде отключения
             for (let interval of parsedIntervals) {
                 if (curMin >= interval.start && curMin < interval.end) {
                     isOff = true;
@@ -96,7 +198,6 @@
                 }
             }
 
-            // Если свет есть, ищем ближайшее отключение впереди
             if (!isOff) {
                 const nextOff = parsedIntervals.find(i => i.start > curMin);
                 if (nextOff) {
