@@ -7,10 +7,18 @@ from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
 import re
 import logging
+from datetime import datetime
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Украинские месяцы для парсинга
+UA_MONTHS = {
+    'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4,
+    'травня': 5, 'червня': 6, 'липня': 7, 'серпня': 8,
+    'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12
+}
 
 # --- КОНФИГУРАЦИЯ ---
 ADMIN_ID = 815422710  
@@ -24,6 +32,29 @@ DATA_FILE = 'data.json'
 USERS_FILE = 'users.json'
 
 bot = TeleBot(TOKEN, threaded=False) if TOKEN else None
+
+# --- ПАРСИНГ ДАТЫ ---
+def parse_date_from_message(text):
+    """
+    Парсит дату из украинского текста
+    Примеры: '12 лютого', '13 лютого' → '12.02.2026', '13.02.2026'
+    """
+    current_year = datetime.now().year
+    
+    # Ищем паттерн: число + украинский месяц
+    pattern = r'(\d{1,2})\s+(' + '|'.join(UA_MONTHS.keys()) + r')'
+    match = re.search(pattern, text.lower())
+    
+    if match:
+        day = int(match.group(1))
+        month_name = match.group(2)
+        month = UA_MONTHS[month_name]
+        
+        date_str = f"{day:02d}.{month:02d}.{current_year}"
+        logger.info(f"📅 Распознана дата: {date_str}")
+        return date_str
+    
+    return None
 
 # --- АВТОПИНГ (КАК В ТВОЕМ index.js) ---
 def keep_alive():
@@ -139,7 +170,7 @@ def get_menu(uid):
     grp = u_data.get('group', 'Не выбрана')
     is_on = u_data.get('notif_15', False)
     
-    notif_text = f"🔔 Уведомления за 15 мин: {'✅ ВКЛ' if is_on else '❌ ВЫКЛ'}"
+    notif_text = f"🔔 Уведомлять о изменениях: {'✅ ВКЛ' if is_on else '❌ ВЫКЛ'}"
     
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(f"👥 Моя очередь: {grp}")
@@ -155,11 +186,18 @@ if bot:
             return
 
         # Если это команды меню - обрабатываем как обычный юзер
-        if "Моя очередь" in text or "Уведомления за 15 мин" in text:
+        if "Моя очередь" in text or "Уведомлять о изменениях" in text:
             user_logic(message)
             return
 
         logger.info(f"\n📨 Получено сообщение от админа (ID {ADMIN_ID})")
+        
+        # Парсим дату из сообщения
+        date_str = parse_date_from_message(text)
+        if not date_str:
+            logger.warning("⚠️ Не удалось распознать дату в сообщении")
+            bot.reply_to(message, "⚠️ Не удалось распознать дату.\nУкажите дату в формате: '12 лютого' или '13 лютого'")
+            return
         
         # Парсинг графика
         parsed_schedules = parse_schedule_message(text)
@@ -171,22 +209,31 @@ if bot:
         
         # Загружаем текущие данные
         data = load_json(DATA_FILE)
+        
+        # Создаем структуру с датой если её еще нет
+        if not isinstance(data, dict) or 'dates' not in data:
+            data = {'dates': {}}
+        
+        # Создаем запись для даты если её нет
+        if date_str not in data['dates']:
+            data['dates'][date_str] = {}
+        
         updated_groups = []
         
-        # Обновляем только те очереди, которые пришли
+        # Обновляем графики для конкретной даты
         for group, schedule in parsed_schedules.items():
-            data[group] = schedule
+            data['dates'][date_str][group] = schedule
             updated_groups.append(group)
         
         # Сохраняем локально
         if save_json(DATA_FILE, data):
-            logger.info(f"✅ Обновлены очереди: {', '.join(updated_groups)}")
+            logger.info(f"✅ Обновлены очереди для {date_str}: {', '.join(updated_groups)}")
             
             # Обновляем на GitHub
             github_success = update_github_file(data)
             
             # Подтверждение админу
-            confirmation = f"✅ ГРАФИКИ ОБНОВЛЕНЫ!\n\n"
+            confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
             confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
             confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GH_TOKEN)'}\n\n"
             
@@ -201,8 +248,8 @@ if bot:
                 
                 if user_group in updated_groups:
                     try:
-                        schedule_text = data[user_group]
-                        notification = f"🔔 ГРАФИК ОБНОВЛЕН!\n\n"
+                        schedule_text = data['dates'][date_str][user_group]
+                        notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
                         notification += f"📍 Ваша очередь: {user_group}\n\n"
                         notification += f"⚡ Отключения:\n{schedule_text}"
                         
@@ -249,7 +296,7 @@ if bot:
             markup.add(*btns)
             bot.send_message(message.chat.id, "Выберите очередь:", reply_markup=markup)
             
-        elif "Уведомления за 15 мин" in msg_text:
+        elif "Уведомлять о изменениях" in msg_text:
             users = load_json(USERS_FILE)
             if uid not in users: 
                 users[uid] = {'group': None, 'notif_15': False}
@@ -258,7 +305,7 @@ if bot:
             save_json(USERS_FILE, users)
             
             status = "ВКЛЮЧЕНЫ ✅" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНЫ ❌"
-            bot.send_message(message.chat.id, f"🔔 Напоминания {status}", reply_markup=get_menu(uid))
+            bot.send_message(message.chat.id, f"🔔 Уведомления об изменениях {status}", reply_markup=get_menu(uid))
         else:
             # Если это не админ и не команда меню
             if message.from_user.id != ADMIN_ID:
@@ -279,11 +326,18 @@ if bot:
         bot.answer_callback_query(call.id, f"✅ Очередь {group}")
         bot.edit_message_text(f"✅ Выбрана очередь: {group}", call.message.chat.id, call.message.message_id)
         
-        # Показываем текущий график для выбранной очереди
+        # Показываем график на сегодня
         data = load_json(DATA_FILE)
-        schedule = data.get(group, "График пока не установлен")
+        today = datetime.now().strftime("%d.%m.%Y")
         
-        info = f"📍 Ваша очередь: {group}\n\n⚡ Отключения:\n{schedule}"
+        schedule = "График пока не установлен"
+        if isinstance(data, dict) and 'dates' in data:
+            if today in data['dates'] and group in data['dates'][today]:
+                schedule = data['dates'][today][group]
+        
+        info = f"📍 Ваша очередь: {group}\n"
+        info += f"📅 График на {today}\n\n"
+        info += f"⚡ Отключения:\n{schedule}"
         bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
 
 # --- ЗАПУСК БОТА ---
