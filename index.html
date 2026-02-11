@@ -2,13 +2,12 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Svet 4.1 App</title>
-    
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0a0a0a">
-    
     <style>
+        * { box-sizing: border-box; }
         body { 
             background: #0a0a0a; 
             color: #fff; 
@@ -19,57 +18,61 @@
             flex-direction: column; 
             justify-content: center; 
             align-items: center; 
-            overflow: hidden;
+            overflow: hidden; /* Убирает ползунки */
+            position: relative;
         }
         
         .clock { 
             position: absolute; 
-            top: 20px; 
-            right: 20px; 
+            top: 15px; 
+            right: 15px; 
             color: #00ffcc; 
             border: 1px solid #00ffcc; 
-            padding: 5px 10px; 
+            padding: 4px 8px; 
             border-radius: 5px; 
             font-family: monospace; 
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            z-index: 10;
         }
         
         .countdown { 
-            font-size: 4rem; 
+            font-size: clamp(3rem, 15vw, 4.5rem); /* Адаптивный размер шрифта */
             font-weight: bold; 
-            margin-bottom: 5px; 
+            margin-bottom: 0; 
             font-family: monospace; 
+            line-height: 1;
         }
         
-        .timer-red { color: #ff4444; text-shadow: 0 0 15px #ff4444; }
-        .timer-green { color: #00ff66; text-shadow: 0 0 15px #00ff66; }
+        .timer-red { color: #ff4444; text-shadow: 0 0 15px rgba(255, 68, 68, 0.5); }
+        .timer-green { color: #00ff66; text-shadow: 0 0 15px rgba(0, 255, 102, 0.5); }
         
         .timer-label { 
-            font-size: 1rem; 
+            font-size: 0.85rem; 
             color: #888; 
             text-transform: uppercase; 
-            margin-bottom: 25px; 
+            margin-bottom: 20px; 
             font-weight: bold; 
-            letter-spacing: 2px;
+            letter-spacing: 1px;
         }
 
         .card { 
             background: #111; 
-            padding: 30px; 
-            border-radius: 25px; 
+            padding: 25px; 
+            border-radius: 20px; 
             border: 1px solid #222; 
             text-align: center; 
-            box-shadow: 0 15px 40px rgba(0,0,0,0.7); 
-            width: 85%; 
-            max-width: 450px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); 
+            width: 90%; 
+            max-width: 400px;
+            z-index: 5;
         }
         
         .schedule { 
-            font-size: 1.8rem; 
+            font-size: 1.5rem; 
             color: #ffcc00; 
             font-weight: bold; 
-            margin: 15px 0; 
-            line-height: 1.8; 
+            margin: 10px 0; 
+            line-height: 1.6; 
             text-align: left; 
             display: inline-block;
         }
@@ -77,34 +80,42 @@
         .group-label { 
             color: #444; 
             text-transform: uppercase; 
-            letter-spacing: 3px; 
-            font-size: 0.7rem; 
-            margin-top: 15px; 
+            letter-spacing: 2px; 
+            font-size: 0.65rem; 
+            margin-top: 10px; 
         }
         
         .status-container { 
             position: absolute; 
-            bottom: 20px; 
-            left: 20px; 
+            bottom: 15px; 
+            left: 15px; 
             text-align: left; 
-            font-size: 0.75rem; 
+            font-size: 0.7rem; 
             color: #555; 
+            line-height: 1.4;
         }
         
-        .status-item { margin: 6px 0; display: flex; align-items: center; }
-        .dot { width: 9px; height: 9px; border-radius: 50%; margin-right: 12px; }
-        .online { background: #00ff66; box-shadow: 0 0 8px #00ff66; }
-        .offline { background: #ff4444; box-shadow: 0 0 8px #ff4444; }
+        .status-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
+        .online { background: #00ff66; box-shadow: 0 0 5px #00ff66; }
+        .offline { background: #ff4444; box-shadow: 0 0 5px #ff4444; }
 
-        button.notif-btn {
-            background: #222;
-            color: #888;
-            border: 1px solid #333;
-            padding: 8px 15px;
-            border-radius: 10px;
-            margin-top: 20px;
+        .notif-btn {
+            background: #1a1a1a;
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            padding: 10px 20px;
+            border-radius: 12px;
+            margin-top: 15px;
             cursor: pointer;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
+            width: 100%;
+            transition: 0.3s;
+            font-weight: bold;
+        }
+        .notif-btn.active {
+            border-color: #555;
+            color: #555;
         }
     </style>
 </head>
@@ -116,11 +127,11 @@
     <div id="timer-comment" class="timer-label">СИНХРОНИЗАЦИЯ...</div>
 
     <div class="card">
-        <div style="color: #444; font-size: 0.7rem; margin-bottom: 15px; letter-spacing: 3px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
+        <div style="color: #444; font-size: 0.6rem; letter-spacing: 2px; margin-bottom: 5px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
         <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
         <div class="group-label">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
         
-        <button class="notif-btn" onclick="requestNotif()">🔔 Включить уведомления</button>
+        <button id="notif-btn" class="notif-btn" onclick="toggleNotif()">🔔 Включить уведомления</button>
     </div>
 
     <div class="status-container">
@@ -131,20 +142,38 @@
     <script>
         let currentSchedule = "";
 
-        // Регистрация Service Worker для PWA и уведомлений
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').then(() => {
-                console.log('SW зарегистрирован');
-            });
+            navigator.serviceWorker.register('sw.js');
         }
 
-        function requestNotif() {
-            if ('Notification' in window) {
+        // Проверка прав при загрузке
+        window.onload = () => {
+            if (Notification.permission === 'granted') {
+                updateNotifButton(true);
+            }
+        };
+
+        function toggleNotif() {
+            if (!('Notification' in window)) return;
+            
+            if (Notification.permission !== 'granted') {
                 Notification.requestPermission().then(permission => {
                     if (permission === 'granted') {
-                        alert('Уведомления включены! Теперь ты будешь получать алерты.');
+                        updateNotifButton(true);
+                        alert('Уведомления успешно включены!');
                     }
                 });
+            } else {
+                alert('Уведомления уже активны в настройках браузера.');
+                updateNotifButton(true);
+            }
+        }
+
+        function updateNotifButton(isActive) {
+            const btn = document.getElementById('notif-btn');
+            if (isActive) {
+                btn.innerText = "🔕 Отключить уведомления";
+                btn.classList.add('active');
             }
         }
 
@@ -165,17 +194,16 @@
                     const formatted = d.schedule.split(',').map(i => "⚡ " + i.trim()).join('<br>');
                     document.getElementById('sched-text').innerHTML = formatted;
                 }
-            } catch(e) { console.error("Ошибка сети"); }
+            } catch(e) {}
         }
 
         function toMinutes(timeStr) {
-            const parts = timeStr.trim().split(':');
-            return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            const p = timeStr.trim().split(':');
+            return parseInt(p[0]) * 60 + parseInt(p[1]);
         }
 
         function processLogic() {
             if (!currentSchedule) return;
-
             const now = new Date();
             const kievTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             const curMin = kievTime.getHours() * 60 + kievTime.getMinutes();
@@ -200,9 +228,7 @@
 
             if (!isOff) {
                 const nextOff = parsedIntervals.find(i => i.start > curMin);
-                if (nextOff) {
-                    targetMin = nextOff.start;
-                }
+                if (nextOff) targetMin = nextOff.start;
             }
 
             const timerEl = document.getElementById('timer-val');
@@ -217,15 +243,13 @@
             }
 
             if (targetMin !== null) {
-                const totalSecondsLeft = (targetMin - curMin) * 60 - curSec;
-                if (totalSecondsLeft > 0) {
-                    const h = Math.floor(totalSecondsLeft / 3600).toString().padStart(2, '0');
-                    const m = Math.floor((totalSecondsLeft % 3600) / 60).toString().padStart(2, '0');
-                    const s = (totalSecondsLeft % 60).toString().padStart(2, '0');
+                const diff = (targetMin - curMin) * 60 - curSec;
+                if (diff > 0) {
+                    const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+                    const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+                    const s = (diff % 60).toString().padStart(2, '0');
                     timerEl.innerText = `${h}:${m}:${s}`;
-                } else {
-                    timerEl.innerText = "00:00:00";
-                }
+                } else { timerEl.innerText = "00:00:00"; }
             } else {
                 timerEl.innerText = "00:00:00";
                 commentEl.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН";
