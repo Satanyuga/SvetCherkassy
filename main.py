@@ -5,10 +5,13 @@ import threading
 import requests
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
+import re
 
 # --- КОНФИГУРАЦИЯ ---
 ADMIN_ID = 815422710  
 TOKEN = os.environ.get("BOT_TOKEN")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # Добавь в Render!
+GITHUB_REPO = "Satanyuga/SvetCherkassy"
 APP_URL = "https://svetcherkassy.onrender.com" 
 
 app = Flask(__name__)
@@ -19,18 +22,101 @@ bot = TeleBot(TOKEN) if TOKEN else None
 
 # --- ФАЙЛЫ ---
 def load_json(filename):
-    if not os.path.exists(filename): return {}
+    if not os.path.exists(filename): 
+        return {}
     try:
-        with open(filename, 'r', encoding='utf-8') as f: return json.load(f)
-    except: return {}
+        with open(filename, 'r', encoding='utf-8') as f: 
+            return json.load(f)
+    except Exception as e:
+        print(f"❌ Ошибка загрузки {filename}: {e}")
+        return {}
 
 def save_json(filename, data):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except: pass
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"✅ Сохранено в {filename}")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка сохранения {filename}: {e}")
+        return False
 
-# --- МЕНЮ (КАК ТЫ ПРОСИЛ: ГАЛОЧКИ И КРЕСТИКИ) ---
+def update_github_file(content):
+    """Обновляет data.json на GitHub для отображения на сайте"""
+    if not GITHUB_TOKEN:
+        print("⚠️ GITHUB_TOKEN не установлен - файл не обновится на сайте!")
+        return False
+    
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data.json"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # Получаем SHA текущего файла
+        response = requests.get(url, headers=headers)
+        sha = response.json().get("sha") if response.status_code == 200 else None
+        
+        # Кодируем содержимое в base64
+        import base64
+        content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
+        content_b64 = base64.b64encode(content_bytes).decode('utf-8')
+        
+        # Отправляем на GitHub
+        data = {
+            "message": "🔄 Обновление графиков от бота",
+            "content": content_b64,
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
+        
+        response = requests.put(url, headers=headers, json=data)
+        
+        if response.status_code in [200, 201]:
+            print("✅ data.json обновлен на GitHub!")
+            return True
+        else:
+            print(f"❌ Ошибка GitHub: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Ошибка обновления GitHub: {e}")
+        return False
+
+# --- ПАРСИНГ ГРАФИКА ---
+def parse_schedule_message(text):
+    """
+    Парсит сообщение формата:
+    1.1: 01:00 – 04:30, 06:30 – 10:30, 13:00 – 16:30, 18:30 – 22:30
+    2.1: 00:00 – 01:00, 03:30 – 07:00, ...
+    """
+    schedules = {}
+    
+    # Ищем строки вида "X.X: время"
+    lines = text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Паттерн: "1.1:" или "1.1 " в начале строки, затем время
+        match = re.match(r'^(\d+\.\d+)\s*:?\s*(.+)$', line)
+        
+        if match:
+            group = match.group(1).strip()
+            schedule_text = match.group(2).strip()
+            
+            # Проверяем, что в расписании есть временные диапазоны
+            if re.search(r'\d{1,2}:\d{2}', schedule_text):
+                schedules[group] = schedule_text
+                print(f"📋 Распознана очередь {group}: {schedule_text[:50]}...")
+    
+    return schedules
+
+# --- МЕНЮ ---
 def get_menu(uid):
     users = load_json(USERS_FILE)
     u_data = users.get(str(uid), {})
@@ -49,46 +135,91 @@ if bot:
     @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
     def admin_logic(message):
         text = message.text
-        if not text: return
+        if not text: 
+            return
 
+        # Если это команды меню - обрабатываем как обычный юзер
         if "Моя очередь" in text or "Уведомления за 15 мин" in text:
             user_logic(message)
             return
 
+        print(f"\n📨 Получено сообщение от админа:\n{text[:200]}...")
+        
         # Парсинг графика
+        parsed_schedules = parse_schedule_message(text)
+        
+        if not parsed_schedules:
+            bot.reply_to(message, "⚠️ Не удалось распознать графики.\n\nФормат:\n1.1: 01:00 – 04:30, 06:30 – 10:30\n2.1: 00:00 – 01:00, 03:30 – 07:00")
+            print("❌ Графики не распознаны")
+            return
+        
+        # Загружаем текущие данные
         data = load_json(DATA_FILE)
-        updated = []
-        for line in text.split('\n'):
-            line = line.strip()
-            if not line: continue
-            try:
-                parts = line.split(None, 1)
-                if len(parts) < 2: continue
-                g = parts[0].replace(":", "").replace("Группа", "").rstrip(".").strip()
-                s = parts[1].strip()
-                data[g] = s
-                updated.append(g)
-            except: continue
-
-        if updated:
-            save_json(DATA_FILE, data)
-            bot.reply_to(message, f"✅ Обновлено: {', '.join(updated)}")
+        updated_groups = []
+        
+        # Обновляем только те очереди, которые пришли
+        for group, schedule in parsed_schedules.items():
+            data[group] = schedule
+            updated_groups.append(group)
+        
+        # Сохраняем локально
+        if save_json(DATA_FILE, data):
+            print(f"✅ Обновлены очереди: {', '.join(updated_groups)}")
             
-            # УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ (РАБОТАЮТ)
+            # Обновляем на GitHub
+            github_success = update_github_file(data)
+            
+            # Подтверждение админу
+            confirmation = f"✅ ГРАФИКИ ОБНОВЛЕНЫ!\n\n"
+            confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
+            confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GITHUB_TOKEN)'}\n\n"
+            
+            bot.reply_to(message, confirmation)
+            
+            # УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ
             users = load_json(USERS_FILE)
+            notified_count = 0
+            
             for uid_str, u_data in users.items():
-                if u_data.get('group') in updated:
+                user_group = u_data.get('group')
+                
+                if user_group in updated_groups:
                     try:
-                        g_name = u_data['group']
-                        bot.send_message(uid_str, f"🔔 ГРАФИК ОБНОВЛЕН!\nОчередь {g_name}:\n{data[g_name]}")
-                    except: pass
+                        schedule_text = data[user_group]
+                        notification = f"🔔 ГРАФИК ОБНОВЛЕН!\n\n"
+                        notification += f"📍 Ваша очередь: {user_group}\n\n"
+                        notification += f"⚡ Отключения:\n{schedule_text}"
+                        
+                        bot.send_message(int(uid_str), notification)
+                        notified_count += 1
+                        print(f"✅ Уведомление отправлено пользователю {uid_str} (очередь {user_group})")
+                        time.sleep(0.05)  # Чтобы не словить лимит Telegram
+                        
+                    except Exception as e:
+                        print(f"❌ Не удалось отправить пользователю {uid_str}: {e}")
+            
+            # Итоговый отчет админу
+            report = f"📊 Уведомлено пользователей: {notified_count}"
+            bot.send_message(ADMIN_ID, report)
+            print(f"\n✅ Обработка завершена: {notified_count} уведомлений отправлено")
         else:
-            bot.reply_to(message, "⚠️ Формат: 4.1 00:00-18:00")
+            bot.reply_to(message, "❌ Ошибка сохранения графиков")
 
     # --- ЮЗЕРЫ ---
     @bot.message_handler(commands=['start'])
     def start(message):
-        bot.send_message(message.chat.id, "Бот активен.", reply_markup=get_menu(message.from_user.id))
+        uid = str(message.from_user.id)
+        users = load_json(USERS_FILE)
+        
+        # Инициализируем нового пользователя
+        if uid not in users:
+            users[uid] = {'group': None, 'notif_15': False}
+            save_json(USERS_FILE, users)
+        
+        welcome = "⚡ Добро пожаловать в бот мониторинга отключений света!\n\n"
+        welcome += "Выберите вашу очередь через меню ниже."
+        
+        bot.send_message(message.chat.id, welcome, reply_markup=get_menu(message.from_user.id))
 
     @bot.message_handler(func=lambda m: True)
     def user_logic(message):
@@ -104,7 +235,8 @@ if bot:
             
         elif "Уведомления за 15 мин" in msg_text:
             users = load_json(USERS_FILE)
-            if uid not in users: users[uid] = {'group': None, 'notif_15': False}
+            if uid not in users: 
+                users[uid] = {'group': None, 'notif_15': False}
             
             users[uid]['notif_15'] = not users[uid]['notif_15']
             save_json(USERS_FILE, users)
@@ -112,33 +244,80 @@ if bot:
             status = "ВКЛЮЧЕНЫ ✅" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНЫ ❌"
             bot.send_message(message.chat.id, f"🔔 Напоминания {status}", reply_markup=get_menu(uid))
         else:
+            # Если это не админ и не команда меню
             if message.from_user.id != ADMIN_ID:
-                bot.send_message(message.chat.id, "⛔ Ввод текста отключен.")
+                bot.send_message(message.chat.id, "⛔ Используйте кнопки меню ниже.")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_handler(call):
         group = call.data.replace("set_g_", "")
         uid = str(call.from_user.id)
         users = load_json(USERS_FILE)
-        if uid not in users: users[uid] = {'group': None, 'notif_15': False}
+        
+        if uid not in users: 
+            users[uid] = {'group': None, 'notif_15': False}
+            
         users[uid]['group'] = group
         save_json(USERS_FILE, users)
-        bot.answer_callback_query(call.id, f"Группа {group}")
+        
+        bot.answer_callback_query(call.id, f"✅ Очередь {group}")
         bot.edit_message_text(f"✅ Выбрана очередь: {group}", call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, "Меню обновлено", reply_markup=get_menu(uid))
+        
+        # Показываем текущий график для выбранной очереди
+        data = load_json(DATA_FILE)
+        schedule = data.get(group, "График пока не установлен")
+        
+        info = f"📍 Ваша очередь: {group}\n\n⚡ Отключения:\n{schedule}"
+        bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
 
 # --- WEB ---
 @app.route('/')
-def index(): return send_from_directory('.', 'index.html')
+def index(): 
+    return send_from_directory('.', 'index.html')
 
 @app.route('/data.json')
-def get_data(): return jsonify(load_json(DATA_FILE))
+def get_data(): 
+    return jsonify(load_json(DATA_FILE))
+
+@app.route('/manifest.json')
+def manifest():
+    return send_from_directory('.', 'manifest.json')
+
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory('.', 'sw.js')
 
 @app.route('/ping')
-def ping(): return "PONG"
+def ping(): 
+    return "PONG"
+
+@app.route('/status')
+def status():
+    """Отладочный endpoint для проверки состояния"""
+    data = load_json(DATA_FILE)
+    users = load_json(USERS_FILE)
+    
+    return jsonify({
+        "schedules_count": len(data),
+        "users_count": len(users),
+        "github_token_set": bool(GITHUB_TOKEN),
+        "bot_token_set": bool(TOKEN)
+    })
 
 if __name__ == '__main__':
+    print("\n" + "="*50)
+    print("🚀 ЗАПУСК БОТА")
+    print("="*50)
+    print(f"✅ TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GITHUB_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН (сайт не обновится)'}")
+    print(f"✅ ADMIN_ID: {ADMIN_ID}")
+    print("="*50 + "\n")
+    
     if bot:
         bot.delete_webhook(drop_pending_updates=True)
         threading.Thread(target=lambda: bot.infinity_polling(timeout=90, skip_pending=True), daemon=True).start()
+        print("✅ Бот запущен\n")
+    else:
+        print("❌ Бот не запустился - проверь TOKEN\n")
+    
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
