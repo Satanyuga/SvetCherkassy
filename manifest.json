@@ -1,0 +1,16 @@
+{
+  "short_name": "Свет 4.1",
+  "name": "График отключений Черкассы 4.1",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2983/2983973.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#0a0a0a",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#0a0a0a"
+}
