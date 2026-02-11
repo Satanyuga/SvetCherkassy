@@ -7,10 +7,10 @@ import sys
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
 
-# --- НАСТРОЙКИ ---
+# --- КОНФИГУРАЦИЯ ---
 TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = 31895665 # Твой ID
-APP_URL = "https://svetcherkassy.onrender.com" 
+ADMIN_ID = 31895665  # Твой ID жестко
+APP_URL = "https://svetcherkassy.onrender.com" # Твой URL
 
 app = Flask(__name__)
 DATA_FILE = 'data.json'
@@ -18,6 +18,7 @@ USERS_FILE = 'users.json'
 
 bot = TeleBot(TOKEN) if TOKEN else None
 
+# --- РАБОТА С ФАЙЛАМИ ---
 def load_json(filename):
     if not os.path.exists(filename): return {}
     try:
@@ -25,127 +26,159 @@ def load_json(filename):
     except: return {}
 
 def save_json(filename, data):
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"[ERR] Ошибка сохранения: {e}", flush=True)
 
-# --- ЖЕСТКИЙ АВТОПИНГ С ВЫВОДОМ В КОНСОЛЬ ---
-def self_ping():
-    time.sleep(20)
+# --- АВТОПИНГ (БЕССОННИЦА) ---
+def keep_alive():
+    time.sleep(10) # Даем серверу проснуться
     while True:
         try:
-            res = requests.get(f"{APP_URL}/ping", timeout=10)
-            # ПЕЧАТАЕМ В ЛОГИ ЖИРНО И СРАЗУ
-            print(f"\n[!!!] Я НЕ СПЛЮ. ОТВЕТ СЕРВЕРА: {res.text}\n", flush=True)
+            r = requests.get(f"{APP_URL}/ping", timeout=10)
+            print(f"[PING] Статус: {r.status_code} | Ответ: {r.text}", flush=True)
         except Exception as e:
-            print(f"\n[!!!] ОШИБКА ПИНГА: {e}\n", flush=True)
-        time.sleep(600) # Раз в 10 минут
+            print(f"[PING] ОШИБКА: {e}", flush=True)
+        time.sleep(300) # Пинг каждые 5 минут
 
-# --- МЕНЮ БОТА ---
-def get_main_menu(user_id):
+# --- ГЕНЕРАТОР МЕНЮ ---
+def get_menu(uid):
     users = load_json(USERS_FILE)
-    u_data = users.get(str(user_id), {})
-    group = u_data.get('group', 'Не выбрана')
-    notif = "✅ ВКЛ" if u_data.get('notif_15', False) else "❌ ВЫКЛ"
+    u_data = users.get(str(uid), {})
+    grp = u_data.get('group', 'Не выбрана')
+    notif = "ВКЛ" if u_data.get('notif_15', False) else "ВЫКЛ"
     
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, input_field_placeholder="Жми кнопки 👇")
-    markup.add(f"👥 Моя очередь: {group}")
-    markup.add(f"🔔 Уведомления за 15 мин: {notif}")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, input_field_placeholder="Используй кнопки 👇")
+    markup.add(f"👥 Моя очередь: {grp}")
+    markup.add(f"🔔 Напоминание за 15 мин: {notif}")
     return markup
 
 if bot:
-    # --- ОБРАБОТЧИК ВЛАДЕЛЬЦА (ПРИОРИТЕТ) ---
+    # --- 1. АДМИНСКАЯ ПАНЕЛЬ (ТЫ) ---
     @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
-    def admin_handler(message):
+    def admin_logic(message):
         text = message.text
         if not text: return
 
-        # Если нажата кнопка меню, обрабатываем как юзер
-        if "Моя очередь" in text or "Уведомления за 15 мин" in text:
-            handle_user_logic(message)
+        # Если админ нажимает кнопки меню
+        if "Моя очередь" in text or "Напоминание за 15 мин" in text:
+            user_logic(message)
             return
 
-        # ПАРСИНГ: ПРОСТО ИЩЕМ ЦИФРЫ В НАЧАЛЕ СТРОКИ
+        # ПАРСИНГ ГРАФИКА
+        print(f"[ADMIN] Получено сообщение: {text}", flush=True)
         data = load_json(DATA_FILE)
-        users = load_json(USERS_FILE)
-        updated = []
-        
-        for line in text.split('\n'):
+        updated_groups = []
+
+        lines = text.split('\n')
+        for line in lines:
             line = line.strip()
             if not line: continue
             
-            # Разбиваем строку: первое слово — это очередь (напр. 4.1), остальное — график
-            parts = line.split(None, 1) 
-            if len(parts) == 2:
-                g = parts[0].replace(":", "").replace("Группа", "").strip()
-                s = parts[1].strip()
-                data[g] = s
-                updated.append(g)
-        
-        if updated:
+            # Логика: разбиваем по первому пробелу. 
+            # Первая часть - группа, вторая - график.
+            # Удаляем лишние слова "Группа" и двоеточия из названия группы
+            try:
+                parts = line.split(None, 1)
+                if len(parts) < 2: continue
+                
+                raw_group = parts[0]
+                schedule = parts[1]
+                
+                # Очистка названия группы (4.1: -> 4.1)
+                group = raw_group.replace(":", "").replace("Группа", "").strip()
+                
+                data[group] = schedule
+                updated_groups.append(group)
+            except:
+                continue
+
+        if updated_groups:
             save_json(DATA_FILE, data)
-            bot.reply_to(message, f"✅ ПРИНЯТО. ОБНОВЛЕНО: {', '.join(updated)}")
-            # РАССЫЛКА
+            bot.reply_to(message, f"✅ ПРИНЯТО.\nОбновлены: {', '.join(updated_groups)}")
+            
+            # Рассылка уведомлений
+            users = load_json(USERS_FILE)
             for uid, u_data in users.items():
-                if u_data.get('group') in updated:
-                    try: bot.send_message(uid, f"📢 ГРАФИК ИЗМЕНИЛСЯ!\nОчередь {u_data['group']}:\n{data[u_data['group']]}")
+                if u_data.get('group') in updated_groups:
+                    try:
+                        g = u_data['group']
+                        bot.send_message(uid, f"📢 ГРАФИК ОБНОВИЛСЯ!\nОчередь {g}:\n{data[g]}")
                     except: pass
         else:
-            bot.reply_to(message, "❌ Не вижу очереди. Напиши например: 4.1 00:00-12:00")
+            bot.reply_to(message, "⚠️ Не поняла формат. Просто напиши:\n4.1 00:00-14:00")
 
-    # --- ОБЩАЯ ЛОГИКА ---
+    # --- 2. ЮЗЕРЫ (БЛОК ТЕКСТА) ---
     @bot.message_handler(commands=['start'])
     def start(message):
-        bot.send_message(message.chat.id, "🤖 Адель на связи. Используй кнопки.", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "🤖 Бот активен. Выберите очередь кнопками.", reply_markup=get_menu(message.from_user.id))
 
     @bot.message_handler(func=lambda m: True)
-    def handle_user_logic(message):
+    def user_logic(message):
         uid = str(message.from_user.id)
-        if "Моя очередь" in message.text:
+        text = message.text
+        
+        # Обработка кнопок
+        if "Моя очередь" in text:
             markup = types.InlineKeyboardMarkup(row_width=3)
-            gs = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2']
-            btns = [types.InlineKeyboardButton(g, callback_data=f"set_g_{g}") for g in gs]
+            groups = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2']
+            btns = [types.InlineKeyboardButton(g, callback_data=f"set_g_{g}") for g in groups]
             markup.add(*btns)
-            bot.send_message(message.chat.id, "Выбери очередь:", reply_markup=markup)
-        elif "Уведомления за 15 мин" in message.text:
+            bot.send_message(message.chat.id, "Выберите вашу очередь:", reply_markup=markup)
+            return
+            
+        elif "Напоминание за 15 мин" in text:
             users = load_json(USERS_FILE)
             if uid not in users: users[uid] = {'group': None, 'notif_15': False}
+            
             users[uid]['notif_15'] = not users[uid]['notif_15']
             save_json(USERS_FILE, users)
-            status = "ВКЛ" if users[uid]['notif_15'] else "ВЫКЛ"
-            bot.send_message(message.chat.id, f"🔔 Напоминание {status}", reply_markup=get_main_menu(uid))
-        else:
-            if message.from_user.id != ADMIN_ID:
-                bot.send_message(message.chat.id, "❌ Писать нельзя. Только кнопки.")
+            
+            status = "ВКЛЮЧЕНО" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНО"
+            bot.send_message(message.chat.id, f"🔔 Напоминание {status}", reply_markup=get_menu(uid))
+            return
 
+        # Если юзер пишет левый текст - блокируем
+        if message.from_user.id != ADMIN_ID:
+            bot.send_message(message.chat.id, "⛔ Ввод текста отключен. Пользуйтесь меню.")
+
+    # --- 3. ОБРАБОТКА ИНЛАЙН КНОПОК ---
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
-    def callback_set_group(call):
+    def callback_handler(call):
         group = call.data.replace("set_g_", "")
-        users = load_json(USERS_FILE)
         uid = str(call.from_user.id)
+        
+        users = load_json(USERS_FILE)
         if uid not in users: users[uid] = {'group': None, 'notif_15': False}
+        
         users[uid]['group'] = group
         save_json(USERS_FILE, users)
-        bot.answer_callback_query(call.id, f"Очередь {group}")
-        bot.edit_message_text(f"✅ Твоя очередь: {group}", call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, "Настройка завершена.", reply_markup=get_main_menu(uid))
+        
+        bot.answer_callback_query(call.id, f"Очередь {group} сохранена")
+        bot.edit_message_text(f"✅ Вы выбрали очередь: {group}", call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "Меню обновлено", reply_markup=get_menu(uid))
 
-# --- СЕРВЕР ---
+# --- ВЕБ-СЕРВЕР ---
 @app.route('/')
-def home(): return "🤖 Адель активна"
+def index(): return send_from_directory('.', 'index.html')
 
 @app.route('/ping')
-def ping_status(): 
-    print("[!!!] ПОЛУЧЕН ВНЕШНИЙ ПИНГ", flush=True)
-    return "Я НЕ СПЛЮ"
+def ping(): return "Я НЕ СПЛЮ"
 
 @app.route('/data.json')
-def get_data(): return jsonify(load_json(DATA_FILE))
-
-@app.route('/index.html')
-def index_page(): return send_from_directory('.', 'index.html')
+def data(): return jsonify(load_json(DATA_FILE))
 
 if __name__ == '__main__':
-    threading.Thread(target=self_ping, daemon=True).start()
+    # Запускаем пингер в фоне
+    threading.Thread(target=keep_alive, daemon=True).start()
+    
+    # Запускаем бота в фоне
     if bot:
-        threading.Thread(target=lambda: bot.infinity_polling(timeout=60, skip_pending=True), daemon=True).start()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+        # skip_pending=True удалит старые зависшие сообщения
+        threading.Thread(target=lambda: bot.infinity_polling(timeout=90, skip_pending=True), daemon=True).start()
+    
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🚀 СЕРВЕР ЗАПУЩЕН НА ПОРТУ {port}", flush=True)
+    app.run(host='0.0.0.0', port=port)
