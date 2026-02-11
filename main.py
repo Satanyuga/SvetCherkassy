@@ -6,11 +6,16 @@ import requests
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
 import re
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # --- КОНФИГУРАЦИЯ ---
 ADMIN_ID = 815422710  
 TOKEN = os.environ.get("BOT_TOKEN")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # Добавь в Render!
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GITHUB_REPO = "Satanyuga/SvetCherkassy"
 APP_URL = "https://svetcherkassy.onrender.com" 
 
@@ -18,7 +23,18 @@ app = Flask(__name__)
 DATA_FILE = 'data.json'
 USERS_FILE = 'users.json'
 
-bot = TeleBot(TOKEN) if TOKEN else None
+bot = TeleBot(TOKEN, threaded=False) if TOKEN else None
+
+# --- АВТОПИНГ (КАК В ТВОЕМ index.js) ---
+def keep_alive():
+    """Пингует сам себя каждые 5 минут чтобы Render не уснул"""
+    while True:
+        try:
+            time.sleep(300)  # 5 минут
+            requests.get(f"{APP_URL}/ping", timeout=10)
+            logger.info("🏓 Автопинг выполнен")
+        except Exception as e:
+            logger.error(f"❌ Ошибка автопинга: {e}")
 
 # --- ФАЙЛЫ ---
 def load_json(filename):
@@ -28,23 +44,23 @@ def load_json(filename):
         with open(filename, 'r', encoding='utf-8') as f: 
             return json.load(f)
     except Exception as e:
-        print(f"❌ Ошибка загрузки {filename}: {e}")
+        logger.error(f"❌ Ошибка загрузки {filename}: {e}")
         return {}
 
 def save_json(filename, data):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"✅ Сохранено в {filename}")
+        logger.info(f"✅ Сохранено в {filename}")
         return True
     except Exception as e:
-        print(f"❌ Ошибка сохранения {filename}: {e}")
+        logger.error(f"❌ Ошибка сохранения {filename}: {e}")
         return False
 
 def update_github_file(content):
     """Обновляет data.json на GitHub для отображения на сайте"""
     if not GITHUB_TOKEN:
-        print("⚠️ GITHUB_TOKEN не установлен - файл не обновится на сайте!")
+        logger.warning("⚠️ GITHUB_TOKEN не установлен - файл не обновится на сайте!")
         return False
     
     try:
@@ -55,7 +71,7 @@ def update_github_file(content):
         }
         
         # Получаем SHA текущего файла
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         sha = response.json().get("sha") if response.status_code == 200 else None
         
         # Кодируем содержимое в base64
@@ -72,17 +88,17 @@ def update_github_file(content):
         if sha:
             data["sha"] = sha
         
-        response = requests.put(url, headers=headers, json=data)
+        response = requests.put(url, headers=headers, json=data, timeout=15)
         
         if response.status_code in [200, 201]:
-            print("✅ data.json обновлен на GitHub!")
+            logger.info("✅ data.json обновлен на GitHub!")
             return True
         else:
-            print(f"❌ Ошибка GitHub: {response.status_code} - {response.text}")
+            logger.error(f"❌ Ошибка GitHub: {response.status_code} - {response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ Ошибка обновления GitHub: {e}")
+        logger.error(f"❌ Ошибка обновления GitHub: {e}")
         return False
 
 # --- ПАРСИНГ ГРАФИКА ---
@@ -112,7 +128,7 @@ def parse_schedule_message(text):
             # Проверяем, что в расписании есть временные диапазоны
             if re.search(r'\d{1,2}:\d{2}', schedule_text):
                 schedules[group] = schedule_text
-                print(f"📋 Распознана очередь {group}: {schedule_text[:50]}...")
+                logger.info(f"📋 Распознана очередь {group}: {schedule_text[:50]}...")
     
     return schedules
 
@@ -143,14 +159,14 @@ if bot:
             user_logic(message)
             return
 
-        print(f"\n📨 Получено сообщение от админа:\n{text[:200]}...")
+        logger.info(f"\n📨 Получено сообщение от админа (ID {ADMIN_ID})")
         
         # Парсинг графика
         parsed_schedules = parse_schedule_message(text)
         
         if not parsed_schedules:
             bot.reply_to(message, "⚠️ Не удалось распознать графики.\n\nФормат:\n1.1: 01:00 – 04:30, 06:30 – 10:30\n2.1: 00:00 – 01:00, 03:30 – 07:00")
-            print("❌ Графики не распознаны")
+            logger.warning("❌ Графики не распознаны")
             return
         
         # Загружаем текущие данные
@@ -164,7 +180,7 @@ if bot:
         
         # Сохраняем локально
         if save_json(DATA_FILE, data):
-            print(f"✅ Обновлены очереди: {', '.join(updated_groups)}")
+            logger.info(f"✅ Обновлены очереди: {', '.join(updated_groups)}")
             
             # Обновляем на GitHub
             github_success = update_github_file(data)
@@ -192,16 +208,16 @@ if bot:
                         
                         bot.send_message(int(uid_str), notification)
                         notified_count += 1
-                        print(f"✅ Уведомление отправлено пользователю {uid_str} (очередь {user_group})")
+                        logger.info(f"✅ Уведомление отправлено пользователю {uid_str} (очередь {user_group})")
                         time.sleep(0.05)  # Чтобы не словить лимит Telegram
                         
                     except Exception as e:
-                        print(f"❌ Не удалось отправить пользователю {uid_str}: {e}")
+                        logger.error(f"❌ Не удалось отправить пользователю {uid_str}: {e}")
             
             # Итоговый отчет админу
             report = f"📊 Уведомлено пользователей: {notified_count}"
             bot.send_message(ADMIN_ID, report)
-            print(f"\n✅ Обработка завершена: {notified_count} уведомлений отправлено")
+            logger.info(f"\n✅ Обработка завершена: {notified_count} уведомлений отправлено")
         else:
             bot.reply_to(message, "❌ Ошибка сохранения графиков")
 
@@ -270,6 +286,48 @@ if bot:
         info = f"📍 Ваша очередь: {group}\n\n⚡ Отключения:\n{schedule}"
         bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
 
+# --- ЗАПУСК БОТА ---
+def start_bot_polling():
+    """Запуск бота с обработкой ошибок и автоперезапуском"""
+    if not bot:
+        logger.error("❌ Бот не создан - проверь BOT_TOKEN")
+        return
+    
+    retry_delay = 5
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"🔄 Попытка запуска бота #{attempt + 1}")
+            
+            # Принудительно удаляем webhook
+            bot.delete_webhook(drop_pending_updates=True)
+            time.sleep(2)
+            
+            # Запускаем polling
+            logger.info("✅ Бот запущен в режиме polling")
+            bot.infinity_polling(
+                timeout=60,
+                long_polling_timeout=60,
+                skip_pending=True,
+                allowed_updates=['message', 'callback_query']
+            )
+            
+            # Если дошли сюда - polling остановился нормально
+            break
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка бота: {e}")
+            
+            if "409" in str(e) or "Conflict" in str(e):
+                logger.warning("⚠️ Конфликт 409 - другой процесс использует токен")
+                logger.info(f"⏳ Жду {retry_delay} сек перед повтором...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Увеличиваем задержку
+            else:
+                logger.error("❌ Критическая ошибка, перезапуск через 10 сек...")
+                time.sleep(10)
+
 # --- WEB ---
 @app.route('/')
 def index(): 
@@ -301,23 +359,31 @@ def status():
         "schedules_count": len(data),
         "users_count": len(users),
         "github_token_set": bool(GITHUB_TOKEN),
-        "bot_token_set": bool(TOKEN)
+        "bot_token_set": bool(TOKEN),
+        "app_url": APP_URL
     })
 
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("🚀 ЗАПУСК БОТА")
-    print("="*50)
-    print(f"✅ TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
-    print(f"✅ GITHUB_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН (сайт не обновится)'}")
+    print("\n" + "="*60)
+    print("🚀 ЗАПУСК СЕРВИСА")
+    print("="*60)
+    print(f"✅ BOT_TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GITHUB_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН'}")
     print(f"✅ ADMIN_ID: {ADMIN_ID}")
-    print("="*50 + "\n")
+    print(f"🌐 URL: {APP_URL}")
+    print("="*60 + "\n")
     
+    # Запускаем автопинг в отдельном потоке
+    ping_thread = threading.Thread(target=keep_alive, daemon=True)
+    ping_thread.start()
+    logger.info("🏓 Автопинг активирован (каждые 5 минут)")
+    
+    # Запускаем бота в отдельном потоке
     if bot:
-        bot.delete_webhook(drop_pending_updates=True)
-        threading.Thread(target=lambda: bot.infinity_polling(timeout=90, skip_pending=True), daemon=True).start()
-        print("✅ Бот запущен\n")
-    else:
-        print("❌ Бот не запустился - проверь TOKEN\n")
+        bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
+        bot_thread.start()
+        time.sleep(3)  # Даем боту время на запуск
     
+    # Запускаем Flask
+    logger.info("🌐 Запуск веб-сервера...")
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
