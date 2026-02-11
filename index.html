@@ -26,7 +26,7 @@
         }
         
         .countdown { 
-            font-size: clamp(3rem, 15vw, 4.5rem); font-weight: bold; margin-bottom: 5px; 
+            font-size: clamp(3.2rem, 16vw, 4.8rem); font-weight: bold; margin-bottom: 5px; 
             font-family: monospace; line-height: 1;
         }
         
@@ -35,7 +35,7 @@
         
         .timer-label { 
             font-size: 0.85rem; color: #888; text-transform: uppercase; 
-            margin-bottom: 20px; font-weight: bold; letter-spacing: 1px;
+            margin-bottom: 25px; font-weight: bold; letter-spacing: 1px;
         }
 
         .card { 
@@ -44,11 +44,11 @@
         }
         
         .schedule { 
-            font-size: 1.5rem; color: #ffcc00; font-weight: bold; margin: 10px 0; 
-            line-height: 1.5; text-align: left; display: inline-block; min-height: 50px;
+            font-size: 1.6rem; color: #ffcc00; font-weight: bold; margin: 10px 0; 
+            line-height: 1.6; text-align: left; display: inline-block; min-height: 50px;
         }
         
-        .group-header { color: #444; font-size: 0.65rem; letter-spacing: 3px; margin-bottom: 8px; text-transform: uppercase; }
+        .group-header { color: #444; font-size: 0.7rem; letter-spacing: 3px; margin-bottom: 8px; text-transform: uppercase; }
 
         .status-wrapper { width: 100%; max-width: 400px; margin-top: 15px; padding-left: 10px; }
         .status-item { display: flex; align-items: center; margin-bottom: 6px; font-size: 0.7rem; color: #555; text-transform: uppercase; }
@@ -68,7 +68,6 @@
             padding: 15px; background: #1a1a1a; border: 1px solid #333; color: #fff; 
             border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem;
         }
-        .group-btn:active { background: #00ffcc; color: #000; }
 
         .notif-btn {
             background: #1a1a1a; color: #00ffcc; border: 1px solid #00ffcc; padding: 12px;
@@ -86,8 +85,8 @@
     <div id="timer-comment" class="timer-label">СИНХРОНИЗАЦИЯ...</div>
 
     <div class="card">
-        <div class="group-header" id="group-title">ГРУППА --</div>
-        <div class="schedule" id="sched-text">ДАННЫЕ ОБНОВЛЯЮТСЯ...</div>
+        <div class="group-header" id="group-title">ГРАФИК ОТКЛЮЧЕНИЙ</div>
+        <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
         <div style="color: #444; text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; margin-top: 12px;">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
         <button id="notif-btn" class="notif-btn" onclick="handleNotif()">🔔 Включить уведомления</button>
     </div>
@@ -102,24 +101,18 @@
             <h3 style="margin:0; color:#00ffcc;">ВАША ГРУППА?</h3>
             <div class="group-grid">
                 <button class="group-btn" onclick="setGroup('1.1')">1.1</button>
-                <button class="group-btn" onclick="setGroup('1.2')">1.2</button>
                 <button class="group-btn" onclick="setGroup('2.1')">2.1</button>
-                <button class="group-btn" onclick="setGroup('2.2')">2.2</button>
                 <button class="group-btn" onclick="setGroup('3.1')">3.1</button>
-                <button class="group-btn" onclick="setGroup('3.2')">3.2</button>
                 <button class="group-btn" onclick="setGroup('4.1')">4.1</button>
-                <button class="group-btn" onclick="setGroup('4.2')">4.2</button>
                 <button class="group-btn" onclick="setGroup('5.1')">5.1</button>
-                <button class="group-btn" onclick="setGroup('5.2')">5.2</button>
                 <button class="group-btn" onclick="setGroup('6.1')">6.1</button>
-                <button class="group-btn" onclick="setGroup('6.2')">6.2</button>
             </div>
         </div>
     </div>
 
     <script>
         let fullData = {};
-        let userGroup = localStorage.getItem('userGroup');
+        let userGroup = localStorage.getItem('userGroup') || "4.1";
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
 
@@ -132,35 +125,32 @@
             renderSchedule();
         }
 
-        if (!userGroup) { openModal(); }
-
         async function refreshData() {
             try {
                 const r = await fetch('data.json?v=' + Date.now());
-                const d = await r.json();
-                fullData = d;
+                fullData = await r.json();
                 renderSchedule();
-            } catch(e) { console.log("Ошибка сети"); }
+            } catch(e) { console.log("Ошибка загрузки данных"); }
         }
 
         function renderSchedule() {
-            if (!userGroup) return;
             document.getElementById('group-title').innerText = "ГРАФИК ОТКЛЮЧЕНИЙ " + userGroup;
             
-            const raw = fullData[userGroup];
+            // ЛОГИКА ИСПРАВЛЕНИЯ: берем либо по ключу группы, либо общий schedule
+            let raw = fullData[userGroup] || fullData["schedule"];
+            
             if (raw) {
-                // Если данные пришли как массив или строка, обрабатываем
-                const items = Array.isArray(raw) ? raw : raw.split(',');
+                const items = raw.split(',');
                 document.getElementById('sched-text').innerHTML = items.map(i => "⚡ " + i.trim()).join('<br>');
-                processLogic();
+                processLogic(raw);
             } else {
-                document.getElementById('sched-text').innerText = "ДАННЫЕ ОТСУТСТВУЮТ";
+                document.getElementById('sched-text').innerText = "ОБНОВИТЕ ДАННЫЕ В БОТЕ";
             }
         }
 
         function handleNotif() {
             if (Notification.permission === 'granted') {
-                alert('Уведомления активны. Настройки в браузере.');
+                alert('Уведомления включены!');
             } else {
                 Notification.requestPermission().then(p => { if(p==='granted') location.reload(); });
             }
@@ -168,39 +158,25 @@
 
         function toMinutes(t) {
             const p = t.trim().split(':');
-            if (p.length < 2) return 0;
             return parseInt(p[0]) * 60 + parseInt(p[1]);
         }
 
-        function processLogic() {
-            const sched = fullData[userGroup];
-            if (!sched) return;
-            
+        function processLogic(schedStr) {
             const now = new Date();
             const kievTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             const curMin = kievTime.getHours() * 60 + kievTime.getMinutes();
             const curSec = kievTime.getSeconds();
             
-            // Парсим интервалы из строки или массива
-            const schedStr = Array.isArray(sched) ? sched.join(',') : sched;
             const intervals = schedStr.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
-            
             let parsedIntervals = intervals.map(range => {
                 const [s, e] = range.split('-').map(toMinutes);
                 return { start: s, end: (e === 0 || e < s) ? 1440 : e };
             }).sort((a, b) => a.start - b.start);
 
-            let isOff = false; 
-            let targetMin = null;
-
+            let isOff = false; let targetMin = null;
             for (let i of parsedIntervals) {
-                if (curMin >= i.start && curMin < i.end) { 
-                    isOff = true; 
-                    targetMin = i.end; 
-                    break; 
-                }
+                if (curMin >= i.start && curMin < i.end) { isOff = true; targetMin = i.end; break; }
             }
-
             if (!isOff) {
                 const next = parsedIntervals.find(i => i.start > curMin);
                 if (next) targetMin = next.start;
@@ -208,36 +184,25 @@
 
             const tV = document.getElementById('timer-val');
             const tC = document.getElementById('timer-comment');
-
-            if (isOff) { 
-                tV.className = "countdown timer-red"; 
-                tC.innerText = "ДО ВКЛЮЧЕНИЯ СВЕТА:"; 
-            } else { 
-                tV.className = "countdown timer-green"; 
-                tC.innerText = "СВЕТ БУДЕТ ЕЩЕ:"; 
-            }
+            if (isOff) { tV.className = "countdown timer-red"; tC.innerText = "ДО ВКЛЮЧЕНИЯ СВЕТА:"; }
+            else { tV.className = "countdown timer-green"; tC.innerText = "СВЕТ БУДЕТ ЕЩЕ:"; }
 
             if (targetMin !== null) {
                 const diff = (targetMin - curMin) * 60 - curSec;
-                if (diff > 0) {
-                    const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-                    const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-                    const s = (diff % 60).toString().padStart(2, '0');
-                    tV.innerText = `${h}:${m}:${s}`;
-                } else {
-                    tV.innerText = "00:00:00";
-                }
-            } else {
-                tV.innerText = "00:00:00";
-                tC.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН";
-            }
+                const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+                const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+                const s = (diff % 60).toString().padStart(2, '0');
+                tV.innerText = `${h}:${m}:${s}`;
+            } else { tV.innerText = "00:00:00"; tC.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН"; }
         }
 
         function updateTime() {
             const now = new Date();
             const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
             document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
-            processLogic();
+            if (fullData[userGroup] || fullData["schedule"]) {
+                processLogic(fullData[userGroup] || fullData["schedule"]);
+            }
         }
 
         if (Notification.permission === 'granted') {
