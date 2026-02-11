@@ -6,91 +6,92 @@ import requests
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot
 
-# --- НАСТРОЙКИ ---
-TOKEN = "ТВОЙ_ТОКЕН_ТЕЛЕГРАМ"  # Замени на свой
-ADMIN_ID = 12345678  # Твой ID
-APP_URL = "https://svetcherkassy.onrender.com" # Твой URL на Render
+# Берем данные из того, что ТЫ УЖЕ ВПИСАЛ в Render
+TOKEN = os.environ.get("BOT_TOKEN")
+# Код проверит TG_API_ID, который равен 31895665
+ADMIN_ID = os.environ.get("TG_API_ID") 
+APP_URL = "https://svetcherkassy.onrender.com"
 
 app = Flask(__name__)
-bot = TeleBot(TOKEN)
 DATA_FILE = 'data.json'
 
-# Инициализация файла данных
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w') as f:
-        json.dump({"schedule": "Нет данных"}, f)
+bot = None
+if TOKEN:
+    try:
+        bot = TeleBot(TOKEN)
+    except Exception as e:
+        print(f"Ошибка инициализации: {e}")
 
 def load_data():
-    with open(DATA_FILE, 'r') as f:
-        return json.load(f)
+    if not os.path.exists(DATA_FILE):
+        return {}
+    try:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- ЛОГИКА ТЕЛЕГРАМ БОТА ---
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "Я Адель. Присылай график в формате:\nГруппа 4.1: 00:00-03:00, ...")
+if bot:
+    @bot.message_handler(commands=['start'])
+    def start(message):
+        bot.reply_to(message, "Йеннифэр слушает. Я готова принимать графики.")
 
-@bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
-def update_schedule(message):
-    text = message.text
-    # Пример парсинга: "Группа 4.1: 00:00-03:00, 06:00-09:00"
-    if ":" in text:
-        try:
-            parts = text.split(":", 1)
-            group_raw = parts[0].replace("Группа", "").strip()
-            sched_raw = parts[1].strip()
-            
-            data = load_data()
-            data[group_raw] = sched_raw
-            save_data(data)
-            bot.reply_to(message, f"✅ Данные для группы {group_raw} обновлены!")
-        except Exception as e:
-            bot.reply_to(message, f"❌ Ошибка: {e}")
-    else:
-        # Если просто прислал строку — пишем в общий schedule
+    @bot.message_handler(func=lambda m: str(m.from_user.id) == str(ADMIN_ID))
+    def update_schedule(message):
+        text = message.text
         data = load_data()
-        data["schedule"] = text
-        save_data(data)
-        bot.reply_to(message, "✅ Общий график обновлен!")
+        updated = []
+        
+        # Парсим всё сообщение целиком (как на твоем скрине)
+        lines = text.split('\n')
+        for line in lines:
+            if ":" in line:
+                try:
+                    parts = line.split(":", 1)
+                    group = parts[0].replace("Группа", "").strip()
+                    # Убираем лишние пробелы и тире
+                    sched = parts[1].strip()
+                    data[group] = sched
+                    updated.append(group)
+                except:
+                    continue
+        
+        if updated:
+            save_data(data)
+            bot.reply_to(message, f"✅ Обновлено групп: {len(updated)}\nДанные: {', '.join(updated)}")
+        else:
+            bot.reply_to(message, "⚠️ Пришли график в формате 'Группа 1.1: время'")
 
-# --- ФУНКЦИЯ САМОПИНГА (АНТИ-СОН) ---
 def keep_alive():
+    """Чтобы Render не засыпал"""
     while True:
         try:
-            requests.get(APP_URL)
-            print("🕒 Пинг сервера: проснулся, работаю.")
-        except Exception as e:
-            print(f"⚠️ Ошибка пинга: {e}")
-        time.sleep(600) # Пинг каждые 10 минут
+            requests.get(APP_URL, timeout=10)
+            print("🕒 Пинг: Сервер в тонусе.")
+        except:
+            pass
+        time.sleep(600)
 
-# --- МАРШРУТЫ FLASK ---
 @app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
+def index(): return send_from_directory('.', 'index.html')
 
 @app.route('/data.json')
-def get_data():
-    return jsonify(load_data())
+def get_data(): return jsonify(load_data())
 
 @app.route('/sw.js')
-def serve_sw():
-    return send_from_directory('.', 'sw.js')
+def serve_sw(): return send_from_directory('.', 'sw.js')
 
 @app.route('/manifest.json')
-def serve_manifest():
-    return send_from_directory('.', 'manifest.json')
+def serve_manifest(): return send_from_directory('.', 'manifest.json')
 
-# --- ЗАПУСК ---
 if __name__ == '__main__':
-    # 1. Запускаем самопинг в отдельном потоке
     threading.Thread(target=keep_alive, daemon=True).start()
+    if bot:
+        threading.Thread(target=lambda: bot.infinity_polling(timeout=60), daemon=True).start()
     
-    # 2. Запускаем Телеграм-бота в отдельном потоке
-    threading.Thread(target=lambda: bot.infinity_polling(timeout=60), daemon=True).start()
-    
-    # 3. Запускаем веб-сервер
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
