@@ -11,7 +11,7 @@ API_HASH = os.environ.get('TG_API_HASH')
 GH_TOKEN = os.environ.get('GH_TOKEN')
 GH_REPO = "Satanyuga/SvetCherkassy"
 
-# Настоящая ссылка на канал этих ублюдков
+# Настоящая ссылка на канал
 CHANNEL_URL = 'https://t.me/pat_cherkasyoblenergo'
 
 client = TelegramClient('bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
