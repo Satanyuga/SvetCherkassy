@@ -66,18 +66,33 @@
         let GROUP = localStorage.getItem('userGroup') || "4.1";
 
         function parseTime(t) {
-            let p = t.trim().split(':');
-            let h = parseInt(p[0]);
+            // Убираем все лишнее и оставляем только цифры и двоеточие
+            t = t.trim().replace(/[^\d:]/g, '');
+            let p = t.split(':');
+            let h = parseInt(p[0]) || 0;
             let m = p[1] ? parseInt(p[1]) : 0;
             return h * 60 + m;
         }
 
         async function updateData() {
             try {
-                let r = await fetch('/data.json?nocache=' + Date.now());
+                // ИСПРАВЛЕНО: Грузим с GitHub Pages напрямую
+                let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?nocache=' + Date.now());
                 DATA = await r.json();
+                console.log('Данные загружены:', DATA);
                 render();
-            } catch (e) { console.log("Data error"); }
+            } catch (e) { 
+                console.error("Ошибка загрузки данных:", e);
+                // Пробуем загрузить локально если не получилось с GitHub
+                try {
+                    let r2 = await fetch('/data.json?nocache=' + Date.now());
+                    DATA = await r2.json();
+                    console.log('Данные загружены локально:', DATA);
+                    render();
+                } catch (e2) {
+                    console.error("Ошибка загрузки локальных данных:", e2);
+                }
+            }
         }
 
         function render() {
@@ -86,6 +101,7 @@
             let disp = document.getElementById('sched-display');
             
             if (sched) {
+                // Разбиваем график на отдельные периоды через запятую
                 disp.innerHTML = sched.split(',').map(s => `⚡ ${s.trim()}`).join('<br>');
                 calculate(sched);
             } else {
@@ -110,19 +126,42 @@
             let cur = kiev.getHours() * 60 + kiev.getMinutes();
             let sec = kiev.getSeconds();
 
-            let ranges = schedStr.match(/\d{1,2}(?::\d{2})?\s*-\s*\d{1,2}(?::\d{2})?/g) || [];
+            // ИСПРАВЛЕНО: Улучшенная регулярка для любого формата времени
+            // Ловит: 01:00 – 04:30, 1:00-4:30, 01:00-04:30, и т.д.
+            let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+            
+            console.log('График:', schedStr);
+            console.log('Найденные интервалы:', ranges);
+            
             let intervals = ranges.map(r => {
-                let [s, e] = r.split('-').map(parseTime);
+                let [s, e] = r.split(/[–\-—]/).map(parseTime);
                 return {start: s, end: e};
             }).sort((a,b) => a.start - b.start);
 
+            console.log('Распарсенные интервалы:', intervals);
+            console.log('Текущее время (минуты):', cur);
+
             let isOff = false, target = null;
+            
+            // Проверяем - сейчас отключение или нет
             for (let i of intervals) {
-                if (cur >= i.start && cur < i.end) { isOff = true; target = i.end; break; }
+                if (cur >= i.start && cur < i.end) { 
+                    isOff = true; 
+                    target = i.end; 
+                    console.log('ОТКЛЮЧЕНИЕ! До включения:', target - cur, 'минут');
+                    break; 
+                }
             }
+            
+            // Если сейчас свет есть - ищем следующее отключение
             if (!isOff) {
                 let next = intervals.find(i => i.start > cur);
-                if (next) target = next.start;
+                if (next) {
+                    target = next.start;
+                    console.log('Свет есть. До отключения:', target - cur, 'минут');
+                } else {
+                    console.log('График на сегодня закончен');
+                }
             }
 
             let tEl = document.getElementById('timer');
@@ -138,14 +177,18 @@
                 let m = Math.floor((diff % 3600) / 60).toString().padStart(2,'0');
                 let s = (diff % 60).toString().padStart(2,'0');
                 tEl.innerText = `${h}:${m}:${s}`;
-            } else { tEl.innerText = "00:00:00"; }
+            } else { 
+                tEl.innerText = "00:00:00"; 
+            }
         }
 
+        // Обновляем таймер каждую секунду
         setInterval(() => {
             document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
             if (DATA[GROUP]) calculate(DATA[GROUP]);
         }, 1000);
 
+        // Загружаем данные сразу и каждые 10 секунд
         updateData();
         setInterval(updateData, 10000);
     </script>
