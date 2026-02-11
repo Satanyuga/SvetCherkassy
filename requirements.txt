@@ -1,5 +1,4 @@
-
-telethon
-requests
 flask
+requests
 gunicorn
+pyTelegramBotAPI
