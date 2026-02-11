@@ -6,10 +6,10 @@ import requests
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
 
-# Настройки из твоих переменных в Render
+# Переменные из Render
 TOKEN = os.environ.get("BOT_TOKEN")
-# Используем твой ID 31895665, вписанный как TG_API_ID
-ADMIN_ID = os.environ.get("TG_API_ID") 
+# Твой ID 31895665
+ADMIN_ID = os.environ.get("TG_API_ID")
 APP_URL = "https://svetcherkassy.onrender.com"
 
 app = Flask(__name__)
@@ -18,7 +18,6 @@ USERS_FILE = 'users.json'
 
 bot = TeleBot(TOKEN) if TOKEN else None
 
-# --- ФУНКЦИИ ДАННЫХ ---
 def load_json(filename):
     if not os.path.exists(filename): return {}
     try:
@@ -29,7 +28,7 @@ def save_json(filename, data):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- МЕНЮ БОТА ---
+# --- МЕНЮ ---
 def get_main_menu(user_id):
     users = load_json(USERS_FILE)
     u_data = users.get(str(user_id), {})
@@ -51,21 +50,32 @@ def get_group_buttons():
 if bot:
     @bot.message_handler(commands=['start'])
     def start(message):
-        bot.send_message(message.chat.id, "Привет! Выбери свою очередь, чтобы получать уведомления об изменениях графика.", 
+        bot.send_message(message.chat.id, "Привет! Используй кнопки ниже для настройки.", 
                          reply_markup=get_main_menu(message.from_user.id))
 
-    @bot.message_handler(func=lambda m: m.text and "Моя очередь" in m.text)
-    def choose_group(message):
-        bot.send_message(message.chat.id, "Выбери свою очередь из списка:", reply_markup=get_group_buttons())
+    # Запрет текста для обычных юзеров (кроме команд)
+    @bot.message_handler(func=lambda m: str(m.from_user.id) != str(ADMIN_ID), content_types=['text'])
+    def handle_user_text(message):
+        if message.text.startswith("/") or "Моя очередь" in message.text or "Уведомления за 15 мин" in message.text:
+            return
+        bot.send_message(message.chat.id, "❌ Я понимаю только нажатия на кнопки.")
 
-    @bot.message_handler(func=lambda m: m.text and "Уведомления за 15 мин" in m.text)
+    @bot.message_handler(func=lambda m: "Моя очередь" in m.text)
+    def choose_group(message):
+        bot.send_message(message.chat.id, "Выбери свою очередь:", reply_markup=get_group_buttons())
+
+    @bot.message_handler(func=lambda m: "Уведомления за 15 мин" in m.text)
     def toggle_15min(message):
         users = load_json(USERS_FILE)
         uid = str(message.from_user.id)
         if uid not in users: users[uid] = {'group': None, 'notif_15': False}
+        
         users[uid]['notif_15'] = not users[uid]['notif_15']
+        status = users[uid]['notif_15']
         save_json(USERS_FILE, users)
-        bot.send_message(message.chat.id, "Настройки уведомлений обновлены!", reply_markup=get_main_menu(uid))
+        
+        msg = "🔔 Вам придет напоминание за 15 минут до события." if status else "🔕 Вы отключили напоминания за 15 минут."
+        bot.send_message(message.chat.id, msg, reply_markup=get_main_menu(uid))
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_set_group(call):
@@ -75,16 +85,17 @@ if bot:
         if uid not in users: users[uid] = {'group': None, 'notif_15': False}
         users[uid]['group'] = group
         save_json(USERS_FILE, users)
-        bot.answer_callback_query(call.id, f"Выбрана очередь {group}")
-        bot.edit_message_text(f"✅ Твоя очередь успешно установлена: {group}", call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, "Теперь я пришлю уведомление, если график этой очереди изменится.", 
-                         reply_markup=get_main_menu(uid))
+        bot.answer_callback_query(call.id, f"Выбрана группа {group}")
+        bot.edit_message_text(f"✅ Очередь {group} установлена.", call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "Теперь я сообщу, если график изменится.", reply_markup=get_main_menu(uid))
 
-    # --- РАССЫЛКА ПРИ ОБНОВЛЕНИИ (ТОЛЬКО ДЛЯ ТЕБЯ) ---
+    # --- ТВОЙ ОБРАБОТЧИК (ВЛАДЕЛЕЦ) ---
     @bot.message_handler(func=lambda m: str(m.from_user.id) == str(ADMIN_ID))
     def admin_update(message):
         text = message.text
-        if ":" not in text: return
+        if ":" not in text:
+            bot.reply_to(message, "⚠️ Присылай график в формате:\nГруппа 1.1: 00:00-03:00")
+            return
         
         data = load_json(DATA_FILE)
         users = load_json(USERS_FILE)
@@ -96,22 +107,21 @@ if bot:
                     p = line.split(":", 1)
                     g = p[0].replace("Группа", "").strip()
                     s = p[1].strip()
-                    if data.get(g) != s: # Если график реально изменился
+                    if data.get(g) != s:
                         data[g] = s
                         updated_groups.append(g)
                 except: continue
         
         if updated_groups:
             save_json(DATA_FILE, data)
-            bot.reply_to(message, f"✅ Обновлено групп: {len(updated_groups)}")
-            
-            # Рассылаем уведомления пользователям этих групп
+            bot.reply_to(message, f"✅ График обновлен для: {', '.join(updated_groups)}")
             for uid, u_data in users.items():
-                target_group = u_data.get('group')
-                if target_group in updated_groups:
+                if u_data.get('group') in updated_groups:
                     try:
-                        bot.send_message(uid, f"📢 ВНИМАНИЕ! Ваш график изменился!\n⚡️ Очередь {target_group}:\n{data[target_group]}")
+                        bot.send_message(uid, f"📢 Ваш график изменился!\nОчередь {u_data['group']}:\n{data[u_data['group']]}")
                     except: pass
+        else:
+            bot.reply_to(message, "ℹ️ Изменений в графике не обнаружено.")
 
 def keep_alive():
     while True:
@@ -128,5 +138,5 @@ def get_data(): return jsonify(load_json(DATA_FILE))
 if __name__ == '__main__':
     threading.Thread(target=keep_alive, daemon=True).start()
     if bot:
-        threading.Thread(target=lambda: bot.infinity_polling(timeout=60), daemon=True).start()
+        threading.Thread(target=lambda: bot.infinity_polling(timeout=60, skip_pending=True), daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
