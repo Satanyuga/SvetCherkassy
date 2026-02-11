@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 # --- КОНФИГУРАЦИЯ ---
 ADMIN_ID = 815422710  
 TOKEN = os.environ.get("BOT_TOKEN")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-GITHUB_REPO = "Satanyuga/SvetCherkassy"
+GITHUB_TOKEN = os.environ.get("GH_TOKEN")  # Твоя переменная в Render
+GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")  # Можно задать вручную или брать из Render
 APP_URL = "https://svetcherkassy.onrender.com" 
 
 app = Flask(__name__)
@@ -60,7 +60,7 @@ def save_json(filename, data):
 def update_github_file(content):
     """Обновляет data.json на GitHub для отображения на сайте"""
     if not GITHUB_TOKEN:
-        logger.warning("⚠️ GITHUB_TOKEN не установлен - файл не обновится на сайте!")
+        logger.warning("⚠️ GH_TOKEN не установлен - файл не обновится на сайте!")
         return False
     
     try:
@@ -188,7 +188,7 @@ if bot:
             # Подтверждение админу
             confirmation = f"✅ ГРАФИКИ ОБНОВЛЕНЫ!\n\n"
             confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
-            confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GITHUB_TOKEN)'}\n\n"
+            confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GH_TOKEN)'}\n\n"
             
             bot.reply_to(message, confirmation)
             
@@ -368,7 +368,8 @@ if __name__ == '__main__':
     print("🚀 ЗАПУСК СЕРВИСА")
     print("="*60)
     print(f"✅ BOT_TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
-    print(f"✅ GITHUB_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GH_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН'}")
+    print(f"✅ GH_REPO: {GITHUB_REPO}")
     print(f"✅ ADMIN_ID: {ADMIN_ID}")
     print(f"🌐 URL: {APP_URL}")
     print("="*60 + "\n")
