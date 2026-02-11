@@ -9,11 +9,20 @@
         body { 
             background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; 
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            min-height: 100vh; margin: 0; padding: 20px; overflow: hidden;
+            min-height: 100vh; margin: 0; padding: 20px; overflow-x: hidden;
         }
         .clock { position: absolute; top: 15px; right: 15px; border: 1px solid #00ffcc; color: #00ffcc; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
         .settings-btn { position: absolute; top: 15px; left: 15px; font-size: 24px; cursor: pointer; z-index: 10; opacity: 0.7; }
         
+        /* ВКЛАДКИ */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab { 
+            background: #222; padding: 10px 20px; border-radius: 10px; cursor: pointer; 
+            border: 1px solid #444; font-size: 14px; transition: all 0.3s;
+        }
+        .tab.active { background: #00ffcc; color: #000; border-color: #00ffcc; font-weight: bold; }
+        
+        #date-label { color: #00ffcc; font-size: 16px; margin-bottom: 10px; text-align: center; font-weight: bold; }
         #status-label { color: #888; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; text-align: center; }
         
         .countdown { 
@@ -26,11 +35,11 @@
         
         .card { 
             background: #161616; padding: 25px; border-radius: 20px; width: 100%; max-width: 360px; 
-            border: 1px solid #333; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid #333; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
         }
-        .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; letter-spacing: 1px; }
-        .schedule-text { font-size: 20px; color: #ffcc00; font-weight: bold; line-height: 1.5; }
+        .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; text-align: center; letter-spacing: 1px; }
+        .schedule-text { font-size: 18px; color: #ffcc00; font-weight: bold; line-height: 1.8; text-align: center; }
 
         #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
         .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
@@ -45,11 +54,18 @@
     <div class="settings-btn" onclick="document.getElementById('modal').style.display='flex'">⚙️</div>
     <div class="clock" id="clock">--:--:--</div>
 
+    <!-- ВКЛАДКИ -->
+    <div class="tabs">
+        <div class="tab active" id="tab-today" onclick="switchTab('today')">Сегодня</div>
+        <div class="tab" id="tab-tomorrow" onclick="switchTab('tomorrow')">Завтра</div>
+    </div>
+
+    <div id="date-label">График на: --.--.----</div>
     <div id="status-label">Загрузка...</div>
     <div id="timer" class="countdown">00:00:00</div>
 
     <div class="card">
-        <div class="card-header"><span>ГРАФИК</span> <span id="current-group">ГРУППА --</span></div>
+        <div class="card-header"><span id="current-group">ГРУППА --</span></div>
         <div id="sched-display" class="schedule-text">Синхронизация с ботом...</div>
     </div>
 
@@ -64,9 +80,9 @@
     <script>
         let DATA = {};
         let GROUP = localStorage.getItem('userGroup') || "4.1";
+        let CURRENT_TAB = 'today';
 
         function parseTime(t) {
-            // Убираем все лишнее и оставляем только цифры и двоеточие
             t = t.trim().replace(/[^\d:]/g, '');
             let p = t.split(':');
             let h = parseInt(p[0]) || 0;
@@ -74,16 +90,38 @@
             return h * 60 + m;
         }
 
+        function getToday() {
+            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            let day = now.getDate().toString().padStart(2, '0');
+            let month = (now.getMonth() + 1).toString().padStart(2, '0');
+            let year = now.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+
+        function getTomorrow() {
+            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            now.setDate(now.getDate() + 1);
+            let day = now.getDate().toString().padStart(2, '0');
+            let month = (now.getMonth() + 1).toString().padStart(2, '0');
+            let year = now.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+
+        function switchTab(tab) {
+            CURRENT_TAB = tab;
+            document.getElementById('tab-today').classList.toggle('active', tab === 'today');
+            document.getElementById('tab-tomorrow').classList.toggle('active', tab === 'tomorrow');
+            render();
+        }
+
         async function updateData() {
             try {
-                // ИСПРАВЛЕНО: Грузим с GitHub Pages напрямую
                 let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?nocache=' + Date.now());
                 DATA = await r.json();
                 console.log('Данные загружены:', DATA);
                 render();
             } catch (e) { 
                 console.error("Ошибка загрузки данных:", e);
-                // Пробуем загрузить локально если не получилось с GitHub
                 try {
                     let r2 = await fetch('/data.json?nocache=' + Date.now());
                     DATA = await r2.json();
@@ -96,16 +134,22 @@
         }
 
         function render() {
-            document.getElementById('current-group').innerText = "ГРУППА " + GROUP;
-            let sched = DATA[GROUP];
+            let targetDate = CURRENT_TAB === 'today' ? getToday() : getTomorrow();
+            document.getElementById('date-label').innerText = `График на: ${targetDate}`;
+            document.getElementById('current-group').innerText = `ГРУППА ${GROUP}`;
+            
             let disp = document.getElementById('sched-display');
+            let sched = null;
+
+            if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
+                sched = DATA.dates[targetDate][GROUP];
+            }
             
             if (sched) {
-                // Разбиваем график на отдельные периоды через запятую
                 disp.innerHTML = sched.split(',').map(s => `⚡ ${s.trim()}`).join('<br>');
                 calculate(sched);
             } else {
-                disp.innerText = "График не задан";
+                disp.innerText = "График еще не сформирован";
                 document.getElementById('timer').innerText = "00:00:00";
                 document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
             }
@@ -122,12 +166,16 @@
         }
 
         function calculate(schedStr) {
+            if (CURRENT_TAB !== 'today') {
+                document.getElementById('timer').innerText = "00:00:00";
+                document.getElementById('status-label').innerText = "График на завтра";
+                return;
+            }
+
             let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             let cur = kiev.getHours() * 60 + kiev.getMinutes();
             let sec = kiev.getSeconds();
 
-            // ИСПРАВЛЕНО: Улучшенная регулярка для любого формата времени
-            // Ловит: 01:00 – 04:30, 1:00-4:30, 01:00-04:30, и т.д.
             let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
             
             console.log('График:', schedStr);
@@ -143,7 +191,6 @@
 
             let isOff = false, target = null;
             
-            // Проверяем - сейчас отключение или нет
             for (let i of intervals) {
                 if (cur >= i.start && cur < i.end) { 
                     isOff = true; 
@@ -153,7 +200,6 @@
                 }
             }
             
-            // Если сейчас свет есть - ищем следующее отключение
             if (!isOff) {
                 let next = intervals.find(i => i.start > cur);
                 if (next) {
@@ -182,13 +228,17 @@
             }
         }
 
-        // Обновляем таймер каждую секунду
         setInterval(() => {
             document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
-            if (DATA[GROUP]) calculate(DATA[GROUP]);
+            
+            if (CURRENT_TAB === 'today') {
+                let targetDate = getToday();
+                if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
+                    calculate(DATA.dates[targetDate][GROUP]);
+                }
+            }
         }, 1000);
 
-        // Загружаем данные сразу и каждые 10 секунд
         updateData();
         setInterval(updateData, 10000);
     </script>
