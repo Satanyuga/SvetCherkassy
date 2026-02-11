@@ -8,32 +8,32 @@
         body { background: #0a0a0a; color: #fff; font-family: 'Segoe UI', sans-serif; height: 100vh; margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .clock { position: absolute; top: 20px; right: 20px; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px 10px; border-radius: 5px; font-family: monospace; }
         
-        /* Таймер обратного отсчета */
-        .countdown { font-size: 3.5rem; font-weight: bold; margin-bottom: 10px; font-family: monospace; }
+        .countdown { font-size: 3.5rem; font-weight: bold; margin-bottom: 5px; font-family: monospace; transition: all 0.3s; }
         .timer-red { color: #ff4444; text-shadow: 0 0 15px #ff4444; }
         .timer-green { color: #00ff66; text-shadow: 0 0 15px #00ff66; }
-        .timer-label { font-size: 0.9rem; color: #888; text-transform: uppercase; margin-bottom: 20px; }
+        .timer-label { font-size: 0.9rem; color: #888; text-transform: uppercase; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px; }
 
-        .card { background: #111; padding: 40px; border-radius: 20px; border: 1px solid #222; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 85%; max-width: 500px; }
-        .schedule { font-size: 1.6rem; color: #ffcc00; font-weight: bold; margin: 20px 0; line-height: 1.5; }
-        .group-label { color: #444; text-transform: uppercase; letter-spacing: 3px; font-size: 0.8rem; }
+        .card { background: #111; padding: 30px; border-radius: 20px; border: 1px solid #222; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 85%; max-width: 450px; }
+        .schedule { font-size: 1.6rem; color: #ffcc00; font-weight: bold; margin: 20px 0; line-height: 1.8; text-align: left; display: inline-block; }
+        .group-label { color: #444; text-transform: uppercase; letter-spacing: 3px; font-size: 0.7rem; margin-top: 10px; }
         
         .status-container { position: absolute; bottom: 20px; left: 20px; text-align: left; font-size: 0.7rem; color: #666; }
         .status-item { margin: 5px 0; display: flex; align-items: center; }
         .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
         .online { background: #00ff66; box-shadow: 0 0 5px #00ff66; }
-        .offline { background: #ff4444; box-shadow: 0 0 5px #ff4444; } /* Красная лампа */
+        .offline { background: #ff4444; box-shadow: 0 0 5px #ff4444; }
     </style>
 </head>
 <body>
     <div class="clock" id="kiev-time">KIEV: --:--:--</div>
 
     <div id="timer-val" class="countdown">00:00:00</div>
-    <div id="timer-comment" class="timer-label">Анализ графика...</div>
+    <div id="timer-comment" class="timer-label">СИНХРОНИЗАЦИЯ...</div>
 
     <div class="card">
-        <div class="group-label">График отключений 4.1</div>
-        <div class="schedule" id="sched-text">Загрузка...</div>
+        <div style="color: #333; font-size: 0.7rem; margin-bottom: 10px; letter-spacing: 2px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
+        <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
+        <div class="group-label">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
     </div>
 
     <div class="status-container">
@@ -46,10 +46,9 @@
 
         function updateTime() {
             const now = new Date();
-            const kievNow = new Intl.DateTimeFormat('uk-UA', {
-                timeZone: 'Europe/Kiev', hour: 'numeric', minute: 'numeric', second: 'numeric'
-            }).format(now);
-            document.getElementById('kiev-time').innerText = "KIEV: " + kievNow;
+            const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+            const kievTimeStr = new Intl.DateTimeFormat('en-GB', options).format(now);
+            document.getElementById('kiev-time').innerText = "KIEV: " + kievTimeStr;
             processLogic();
         }
 
@@ -59,49 +58,50 @@
                 const d = await r.json();
                 if (d.schedule && d.schedule !== currentSchedule) {
                     currentSchedule = d.schedule;
-                    // Добавляем молнии к визуальному отображению
-                    const formatted = d.schedule.split(',').map(i => "⚡" + i.trim()).join('<br>');
+                    const formatted = d.schedule.split(',').map(i => "⚡ " + i.trim()).join('<br>');
                     document.getElementById('sched-text').innerHTML = formatted;
                 }
-            } catch(e) {}
+            } catch(e) { console.error("Ошибка загрузки данных"); }
+        }
+
+        function toMinutes(timeStr) {
+            const [h, m] = timeStr.trim().split(':').map(Number);
+            return h * 60 + m;
         }
 
         function processLogic() {
             if (!currentSchedule) return;
 
             const now = new Date();
+            // Получаем точное время в Киеве в минутах и секундах
             const kievTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
-            const currentMinutes = kievTime.getHours() * 60 + kievTime.getMinutes();
+            const curMin = kievTime.getHours() * 60 + kievTime.getMinutes();
+            const curSec = kievTime.getSeconds();
             
-            // Парсим интервалы (например "08:30-12:30")
-            const intervals = currentSchedule.match(/\d{1,2}:\d{2}-\d{1,2}:\d{2}/g) || [];
+            const intervals = currentSchedule.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
+            let parsedIntervals = intervals.map(range => {
+                const [start, end] = range.split('-').map(toMinutes);
+                return { start, end: end === 0 ? 1440 : end };
+            }).sort((a, b) => a.start - b.start);
+
             let isOff = false;
-            let nextEventTime = null;
+            let targetMin = null;
 
-            intervals.forEach(range => {
-                const [start, end] = range.split('-');
-                const [sH, sM] = start.split(':').map(Number);
-                const [eH, eM] = end.split(':').map(Number);
-                
-                let startTotal = sH * 60 + sM;
-                let endTotal = eH * 60 + eM;
-                if (endTotal === 0) endTotal = 1440; // Полночь
-
-                if (currentMinutes >= startTotal && currentMinutes < endTotal) {
+            // Проверяем, находимся ли мы СЕЙЧАС в периоде отключения
+            for (let interval of parsedIntervals) {
+                if (curMin >= interval.start && curMin < interval.end) {
                     isOff = true;
-                    nextEventTime = endTotal;
+                    targetMin = interval.end;
+                    break;
                 }
-            });
+            }
 
-            // Если свет есть, ищем ближайшее отключение в будущем
+            // Если свет есть, ищем ближайшее отключение впереди
             if (!isOff) {
-                let futureStarts = intervals.map(range => {
-                    const start = range.split('-')[0];
-                    const [h, m] = start.split(':').map(Number);
-                    return h * 60 + m;
-                }).filter(t => t > currentMinutes);
-                
-                nextEventTime = futureStarts.length > 0 ? Math.min(...futureStarts) : null;
+                const nextOff = parsedIntervals.find(i => i.start > curMin);
+                if (nextOff) {
+                    targetMin = nextOff.start;
+                }
             }
 
             const timerEl = document.getElementById('timer-val');
@@ -109,26 +109,30 @@
 
             if (isOff) {
                 timerEl.className = "countdown timer-red";
-                commentEl.innerText = "До включения света:";
+                commentEl.innerText = "ДО ВКЛЮЧЕНИЯ СВЕТА:";
             } else {
                 timerEl.className = "countdown timer-green";
-                commentEl.innerText = "Свет будет еще:";
+                commentEl.innerText = "СВЕТ БУДЕТ ЕЩЕ:";
             }
 
-            if (nextEventTime) {
-                const diff = (nextEventTime - currentMinutes) * 60 - kievTime.getSeconds();
-                const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-                const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-                const s = (diff % 60).toString().padStart(2, '0');
-                timerEl.innerText = `${h}:${m}:${s}`;
+            if (targetMin !== null) {
+                const totalSecondsLeft = (targetMin - curMin) * 60 - curSec;
+                if (totalSecondsLeft > 0) {
+                    const h = Math.floor(totalSecondsLeft / 3600).toString().padStart(2, '0');
+                    const m = Math.floor((totalSecondsLeft % 3600) / 60).toString().padStart(2, '0');
+                    const s = (totalSecondsLeft % 60).toString().padStart(2, '0');
+                    timerEl.innerText = `${h}:${m}:${s}`;
+                } else {
+                    timerEl.innerText = "00:00:00";
+                }
             } else {
                 timerEl.innerText = "00:00:00";
-                commentEl.innerText = "График на сегодня исчерпан";
+                commentEl.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН";
             }
         }
 
         setInterval(updateTime, 1000);
-        setInterval(refreshData, 5000);
+        setInterval(refreshData, 10000);
         refreshData();
     </script>
 </body>
