@@ -3,11 +3,10 @@ import json
 import time
 import threading
 import requests
-import sys
 from flask import Flask, jsonify, send_from_directory
 from telebot import TeleBot, types
 
-# --- ЖЕСТКИЕ ПУТИ ---
+# --- КОНСТАНТЫ ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, 'data.json')
 USERS_FILE = os.path.join(BASE_DIR, 'users.json')
@@ -18,6 +17,7 @@ APP_URL = "https://svetcherkassy.onrender.com"
 
 app = Flask(__name__)
 
+# --- ФУНКЦИИ РАБОТЫ С ДАННЫМИ ---
 def load_json(filename):
     if not os.path.exists(filename): return {}
     try:
@@ -29,14 +29,16 @@ def save_json(filename, data):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-            f.flush() # Выталкиваем данные на диск немедленно
+            f.flush()
+            os.fsync(f.fileno()) 
     except Exception as e:
-        print(f"[ERR] Ошибка сохранения {filename}: {e}", flush=True)
+        print(f"[ERROR] Ошибка записи {filename}: {e}", flush=True)
 
-# --- ДАЛЬШЕ ЛОГИКА БОТА (БЕЗ ИЗМЕНЕНИЙ, РАЗ ОНА РАБОТАЕТ) ---
+# --- БОТ ---
 bot = TeleBot(TOKEN) if TOKEN else None
 
-def is_admin(m): return m.from_user.id == ADMIN_ID
+def is_admin(m):
+    return m.from_user.id == ADMIN_ID
 
 def get_main_menu(uid):
     users = load_json(USERS_FILE)
@@ -51,8 +53,10 @@ def get_main_menu(uid):
 if bot:
     @bot.message_handler(commands=['check'])
     def check_me(message):
-        if is_admin(message): bot.reply_to(message, "👑 Хозяин на месте.")
-        else: bot.reply_to(message, f"👤 ID: {message.from_user.id}")
+        if is_admin(message):
+            bot.reply_to(message, "👑 Статус: Хозяин. Система подчиняется тебе.")
+        else:
+            bot.reply_to(message, f"👤 Статус: Смертный. ID: {message.from_user.id}")
 
     @bot.message_handler(func=is_admin)
     def handle_admin_updates(message):
@@ -76,19 +80,18 @@ if bot:
         
         if updated:
             save_json(DATA_FILE, data)
-            bot.reply_to(message, f"✅ Обновлено на сервере: {', '.join(updated)}")
-            # Рассылка
+            bot.reply_to(message, f"✨ График обновлен: {', '.join(updated)}")
             users = load_json(USERS_FILE)
             for uid, u_data in users.items():
                 if u_data.get('group') in updated:
-                    try: bot.send_message(uid, f"⚡ Очередь {u_data['group']}:\n{data[u_data['group']]}")
+                    try: bot.send_message(uid, f"⚡ ГРАФИК ОБНОВЛЕН!\nГруппа {u_data['group']}:\n{data[u_data['group']]}")
                     except: pass
         else:
-            bot.reply_to(message, "❌ Формат! Пример: 4.1 12:00-15:00")
+            bot.reply_to(message, "⚠️ Неверный формат. Пиши: `4.1 12:00-15:00`", parse_mode="Markdown")
 
     @bot.message_handler(commands=['start'])
     def start(message):
-        bot.send_message(message.chat.id, "Адель в строю.", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "Адель готова. Что прикажешь?", reply_markup=get_main_menu(message.from_user.id))
 
     @bot.message_handler(func=lambda m: True)
     def handle_all_users(message):
@@ -99,13 +102,13 @@ if bot:
             gs = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2']
             btns = [types.InlineKeyboardButton(g, callback_data=f"set_g_{g}") for g in gs]
             markup.add(*btns)
-            bot.send_message(message.chat.id, "Выбирай группу:", reply_markup=markup)
+            bot.send_message(message.chat.id, "Выбирай свою группу:", reply_markup=markup)
         elif "Уведомления за 15 мин" in text:
             users = load_json(USERS_FILE)
             if uid not in users: users[uid] = {'group': None, 'notif_15': False}
             users[uid]['notif_15'] = not users[uid]['notif_15']
             save_json(USERS_FILE, users)
-            bot.send_message(message.chat.id, "Готово.", reply_markup=get_main_menu(uid))
+            bot.send_message(message.chat.id, "Настройки изменены.", reply_markup=get_main_menu(uid))
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_inline(call):
@@ -115,7 +118,7 @@ if bot:
         if uid not in users: users[uid] = {'group': None, 'notif_15': False}
         users[uid]['group'] = group
         save_json(USERS_FILE, users)
-        bot.edit_message_text(f"✅ Выбрана группа {group}", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(f"✅ Группа {group} выбрана.", call.message.chat.id, call.message.message_id)
         bot.send_message(call.message.chat.id, "Меню обновлено.", reply_markup=get_main_menu(uid))
 
 # --- FLASK ---
@@ -123,9 +126,7 @@ if bot:
 def home(): return send_from_directory(BASE_DIR, 'index.html')
 
 @app.route('/data.json')
-def get_data(): 
-    # Читаем файл ПРЯМО перед отдачей пользователю
-    return jsonify(load_json(DATA_FILE))
+def get_data(): return jsonify(load_json(DATA_FILE))
 
 @app.route('/ping')
 def ping(): return "PONG"
