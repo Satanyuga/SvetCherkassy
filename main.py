@@ -9,8 +9,9 @@ from telebot import TeleBot, types
 
 # --- КОНФИГУРАЦИЯ ---
 TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = 31895665  # Твой ID жестко
-APP_URL = "https://svetcherkassy.onrender.com" # Твой URL
+# 🔥 ВОТ ТВОЙ ID. ТЕПЕРЬ ОН ТЕБЯ УЗНАЕТ.
+ADMIN_ID = 815422710  
+APP_URL = "https://svetcherkassy.onrender.com" 
 
 app = Flask(__name__)
 DATA_FILE = 'data.json'
@@ -32,18 +33,18 @@ def save_json(filename, data):
     except Exception as e:
         print(f"[ERR] Ошибка сохранения: {e}", flush=True)
 
-# --- АВТОПИНГ (БЕССОННИЦА) ---
+# --- АВТОПИНГ ---
 def keep_alive():
-    time.sleep(10) # Даем серверу проснуться
+    time.sleep(10) 
     while True:
         try:
             r = requests.get(f"{APP_URL}/ping", timeout=10)
-            print(f"[PING] Статус: {r.status_code} | Ответ: {r.text}", flush=True)
+            print(f"[PING] Я НЕ СПЛЮ. Статус: {r.status_code}", flush=True)
         except Exception as e:
             print(f"[PING] ОШИБКА: {e}", flush=True)
-        time.sleep(300) # Пинг каждые 5 минут
+        time.sleep(300) 
 
-# --- ГЕНЕРАТОР МЕНЮ ---
+# --- МЕНЮ ---
 def get_menu(uid):
     users = load_json(USERS_FILE)
     u_data = users.get(str(uid), {})
@@ -56,19 +57,19 @@ def get_menu(uid):
     return markup
 
 if bot:
-    # --- 1. АДМИНСКАЯ ПАНЕЛЬ (ТЫ) ---
+    # --- 1. АДМИНСКАЯ ПАНЕЛЬ (ТВОЙ ID: 815422710) ---
     @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
     def admin_logic(message):
         text = message.text
         if not text: return
 
-        # Если админ нажимает кнопки меню
+        # Если админ нажимает кнопки меню, работаем как с юзером
         if "Моя очередь" in text or "Напоминание за 15 мин" in text:
             user_logic(message)
             return
 
         # ПАРСИНГ ГРАФИКА
-        print(f"[ADMIN] Получено сообщение: {text}", flush=True)
+        print(f"[ADMIN] Принято: {text}", flush=True)
         data = load_json(DATA_FILE)
         updated_groups = []
 
@@ -77,18 +78,16 @@ if bot:
             line = line.strip()
             if not line: continue
             
-            # Логика: разбиваем по первому пробелу. 
-            # Первая часть - группа, вторая - график.
-            # Удаляем лишние слова "Группа" и двоеточия из названия группы
             try:
+                # Разбиваем по пробелу: "4.1 00-18" -> ["4.1", "00-18"]
                 parts = line.split(None, 1)
                 if len(parts) < 2: continue
                 
                 raw_group = parts[0]
                 schedule = parts[1]
                 
-                # Очистка названия группы (4.1: -> 4.1)
-                group = raw_group.replace(":", "").replace("Группа", "").strip()
+                # ЧИСТКА: убираем двоеточия, слово Группа и ТОЧКУ в конце (4.1. -> 4.1)
+                group = raw_group.replace(":", "").replace("Группа", "").rstrip(".").strip()
                 
                 data[group] = schedule
                 updated_groups.append(group)
@@ -97,9 +96,10 @@ if bot:
 
         if updated_groups:
             save_json(DATA_FILE, data)
-            bot.reply_to(message, f"✅ ПРИНЯТО.\nОбновлены: {', '.join(updated_groups)}")
+            # Отвечаем, что всё ок
+            bot.reply_to(message, f"✅ ГРАФИК ПРИНЯТ.\nОбновлены: {', '.join(updated_groups)}")
             
-            # Рассылка уведомлений
+            # Рассылка
             users = load_json(USERS_FILE)
             for uid, u_data in users.items():
                 if u_data.get('group') in updated_groups:
@@ -108,9 +108,9 @@ if bot:
                         bot.send_message(uid, f"📢 ГРАФИК ОБНОВИЛСЯ!\nОчередь {g}:\n{data[g]}")
                     except: pass
         else:
-            bot.reply_to(message, "⚠️ Не поняла формат. Просто напиши:\n4.1 00:00-14:00")
+            bot.reply_to(message, "⚠️ Не поняла. Пиши так:\n4.1 00:00-18:00")
 
-    # --- 2. ЮЗЕРЫ (БЛОК ТЕКСТА) ---
+    # --- 2. ЮЗЕРЫ (БЛОКИРОВКА) ---
     @bot.message_handler(commands=['start'])
     def start(message):
         bot.send_message(message.chat.id, "🤖 Бот активен. Выберите очередь кнопками.", reply_markup=get_menu(message.from_user.id))
@@ -120,7 +120,7 @@ if bot:
         uid = str(message.from_user.id)
         text = message.text
         
-        # Обработка кнопок
+        # КНОПКИ
         if "Моя очередь" in text:
             markup = types.InlineKeyboardMarkup(row_width=3)
             groups = ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2']
@@ -132,19 +132,17 @@ if bot:
         elif "Напоминание за 15 мин" in text:
             users = load_json(USERS_FILE)
             if uid not in users: users[uid] = {'group': None, 'notif_15': False}
-            
             users[uid]['notif_15'] = not users[uid]['notif_15']
             save_json(USERS_FILE, users)
-            
             status = "ВКЛЮЧЕНО" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНО"
             bot.send_message(message.chat.id, f"🔔 Напоминание {status}", reply_markup=get_menu(uid))
             return
 
-        # Если юзер пишет левый текст - блокируем
+        # ЕСЛИ ЭТО НЕ АДМИН ПИШЕТ ТЕКСТ -> БЛОК
         if message.from_user.id != ADMIN_ID:
             bot.send_message(message.chat.id, "⛔ Ввод текста отключен. Пользуйтесь меню.")
 
-    # --- 3. ОБРАБОТКА ИНЛАЙН КНОПОК ---
+    # --- 3. ИНЛАЙН КНОПКИ ---
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_handler(call):
         group = call.data.replace("set_g_", "")
@@ -152,15 +150,14 @@ if bot:
         
         users = load_json(USERS_FILE)
         if uid not in users: users[uid] = {'group': None, 'notif_15': False}
-        
         users[uid]['group'] = group
         save_json(USERS_FILE, users)
         
-        bot.answer_callback_query(call.id, f"Очередь {group} сохранена")
-        bot.edit_message_text(f"✅ Вы выбрали очередь: {group}", call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id, f"Очередь {group}")
+        bot.edit_message_text(f"✅ Выбрана очередь: {group}", call.message.chat.id, call.message.message_id)
         bot.send_message(call.message.chat.id, "Меню обновлено", reply_markup=get_menu(uid))
 
-# --- ВЕБ-СЕРВЕР ---
+# --- ВЕБ ---
 @app.route('/')
 def index(): return send_from_directory('.', 'index.html')
 
@@ -171,14 +168,12 @@ def ping(): return "Я НЕ СПЛЮ"
 def data(): return jsonify(load_json(DATA_FILE))
 
 if __name__ == '__main__':
-    # Запускаем пингер в фоне
     threading.Thread(target=keep_alive, daemon=True).start()
     
-    # Запускаем бота в фоне
     if bot:
-        # skip_pending=True удалит старые зависшие сообщения
+        # Чистим старые сообщения (skip_pending) и запускаем
+        print(f"🚀 ЗАПУСК БОТА ДЛЯ ID: {ADMIN_ID}", flush=True)
         threading.Thread(target=lambda: bot.infinity_polling(timeout=90, skip_pending=True), daemon=True).start()
     
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 СЕРВЕР ЗАПУЩЕН НА ПОРТУ {port}", flush=True)
     app.run(host='0.0.0.0', port=port)
