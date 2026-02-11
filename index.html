@@ -117,13 +117,19 @@
 
     <script>
         let fullData = {};
-        let userGroup = localStorage.getItem('userGroup');
+        let userGroup = localStorage.getItem('userGroup') || "4.1";
 
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js', { scope: './' })
-                .then(reg => console.log('SW зарегистрирован'))
-                .catch(err => console.error('Ошибка SW:', err));
+        async function registerSW() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const reg = await navigator.serviceWorker.register('sw.js?v=' + Date.now());
+                    console.log('SW Registered');
+                } catch (e) {
+                    console.error('SW Registration failed', e);
+                }
+            }
         }
+        registerSW();
 
         function openModal() {
             document.getElementById('group-modal').style.display = 'flex';
@@ -156,8 +162,6 @@
             renderSchedule();
         }
 
-        if (!userGroup) { setTimeout(openModal, 500); }
-
         async function refreshData() {
             try {
                 const r = await fetch('data.json?v=' + Date.now());
@@ -167,7 +171,6 @@
         }
 
         function renderSchedule() {
-            if (!userGroup) return;
             document.getElementById('group-title').innerText = "ГРАФИК ОТКЛЮЧЕНИЙ " + userGroup;
             let raw = fullData[userGroup];
             if (raw) {
@@ -181,9 +184,11 @@
         function handleNotif() {
             Notification.requestPermission().then(permission => {
                 if (permission === 'granted') {
+                    // Тестовое уведомление сразу
+                    new Notification("Успешно!", { body: "Теперь уведомления будут приходить за 15 минут." });
                     location.reload();
                 } else {
-                    alert("Доступ заблокирован в браузере.");
+                    alert("Разрешите уведомления в настройках браузера!");
                 }
             });
         }
@@ -231,8 +236,7 @@
         function updateTime() {
             const now = new Date();
             const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-            const timeStr = new Intl.DateTimeFormat('en-GB', options).format(now);
-            document.getElementById('kiev-time').innerText = "KIEV: " + timeStr;
+            document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
             if (fullData[userGroup]) processLogic(fullData[userGroup]);
         }
 
