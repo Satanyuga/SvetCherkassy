@@ -103,13 +103,12 @@
     <div id="group-modal">
         <div class="modal-content">
             <h3 style="margin:0; color:#00ffcc; font-size: 1.1rem;">НАСТРОЙКИ</h3>
-            <div class="group-grid" id="grid">
-                </div>
+            <div class="group-grid" id="grid"></div>
 
             <div class="notif-section">
                 <button id="notif-btn" class="notif-btn" onclick="handleNotif()">🔔 ВКЛЮЧИТЬ УВЕДОМЛЕНИЯ</button>
                 <div class="notif-desc">
-                    * Уведомления приходят автоматически за 15 минут до начала и конца отключения.
+                    * Уведомления приходят за 15 минут до начала и конца отключения.
                 </div>
             </div>
             <button style="margin-top:20px; background:none; border:none; color:#555; cursor:pointer;" onclick="document.getElementById('group-modal').style.display='none'">ЗАКРЫТЬ</button>
@@ -120,11 +119,10 @@
         let fullData = {};
         let userGroup = localStorage.getItem('userGroup');
 
-        // Регистрация SW для работы уведомлений
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').then(reg => {
-                console.log('SW Registered');
-            });
+            navigator.serviceWorker.register('sw.js', { scope: './' })
+                .then(reg => console.log('SW зарегистрирован'))
+                .catch(err => console.error('Ошибка SW:', err));
         }
 
         function openModal() {
@@ -185,7 +183,7 @@
                 if (permission === 'granted') {
                     location.reload();
                 } else {
-                    alert("Доступ к уведомлениям заблокирован в браузере.");
+                    alert("Доступ заблокирован в браузере.");
                 }
             });
         }
@@ -233,7 +231,8 @@
         function updateTime() {
             const now = new Date();
             const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-            document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
+            const timeStr = new Intl.DateTimeFormat('en-GB', options).format(now);
+            document.getElementById('kiev-time').innerText = "KIEV: " + timeStr;
             if (fullData[userGroup]) processLogic(fullData[userGroup]);
         }
 
