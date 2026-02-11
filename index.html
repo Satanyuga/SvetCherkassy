@@ -3,100 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Свет 4.1</title>
+    <title>Svet 4.1 Debug</title>
     <style>
-        body { 
-            background: #0d0d0d; 
-            color: #e0e0e0; 
-            font-family: 'Courier New', Courier, monospace; 
-            display: flex; 
-            flex-direction: column;
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            margin: 0; 
-            overflow: hidden;
-        }
-        /* Часы в углу */
-        .clock {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            font-size: 1rem;
-            color: #00ffcc;
-            background: rgba(0, 255, 204, 0.1);
-            padding: 5px 10px;
-            border-radius: 5px;
-            border: 1px solid #00ffcc;
-        }
-        .card { 
-            background: #1a1a1a; 
-            padding: 40px; 
-            border-radius: 15px; 
-            border: 2px solid #333; 
-            text-align: center; 
-            width: 90%; 
-            max-width: 600px; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
-        h1 { margin: 0 0 20px; font-size: 1.5rem; text-transform: uppercase; color: #fff; }
+        body { background: #0a0a0a; color: #fff; font-family: 'Segoe UI', sans-serif; height: 100vh; margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .clock { position: absolute; top: 20px; right: 20px; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px 10px; border-radius: 5px; font-family: monospace; }
+        .card { background: #111; padding: 50px; border-radius: 20px; border: 1px solid #222; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .schedule { font-size: 2.2rem; color: #ffcc00; font-weight: bold; margin: 20px 0; }
+        .group-label { color: #444; text-transform: uppercase; letter-spacing: 3px; font-size: 0.8rem; }
         
-        .schedule-box { 
-            font-size: 1.8rem; /* Крупный шрифт для графика */
-            margin: 30px 0; 
-            color: #ffcc00; 
-            font-weight: bold; 
-            line-height: 1.4; 
-            text-shadow: 0 0 10px rgba(255, 204, 0, 0.3);
-        }
-        
-        .group { color: #666; font-size: 0.8rem; letter-spacing: 2px; }
-        .status { font-size: 0.9rem; margin-top: 10px; color: #444; }
+        /* Статусы внизу слева */
+        .status-container { position: absolute; bottom: 20px; left: 20px; text-align: left; font-size: 0.7rem; color: #666; }
+        .status-item { margin: 5px 0; display: flex; align-items: center; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
+        .online { background: #00ff66; box-shadow: 0 0 5px #00ff66; }
     </style>
 </head>
 <body>
-    <div class="clock" id="kyiv-clock">--:--:--</div>
+    <div class="clock" id="kiev-time">KIEV: --:--:--</div>
 
     <div class="card">
-        <h1>График отключений</h1>
-        <div id="schedule" class="schedule-box">Загрузка данных...</div>
-        <div class="group">ГРУППА 4.1 | ЧЕРКАССЫ</div>
-        <div class="status" id="last-update">Ожидание...</div>
+        <div class="group-label">График отключений 4.1</div>
+        <div class="schedule" id="sched-text">ОЖИДАНИЕ...</div>
+    </div>
+
+    <div class="status-container">
+        <div class="status-item"><div class="dot online"></div> Группа облэнерго: ПОДКЛЮЧЕН</div>
+        <div class="status-item"><div class="dot online"></div> Телеграм бот: ПОДКЛЮЧЕН</div>
     </div>
 
     <script>
-        // Функция часов (Киев)
-        function updateClock() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('uk-UA', { 
-                timeZone: 'Europe/Kiev',
-                hour12: false 
-            });
-            document.getElementById('kyiv-clock').innerText = "KIEV: " + timeString;
+        function updateTime() {
+            document.getElementById('kiev-time').innerText = "KIEV: " + new Date().toLocaleTimeString('uk-UA', {timeZone:'Europe/Kiev'});
         }
-        setInterval(updateClock, 1000);
-        updateClock();
+        setInterval(updateTime, 1000);
+        updateTime();
 
-        // Загрузка графика
-        async function loadSchedule() {
+        async function refresh() {
             try {
-                // t=Math.random() чтобы не кэшировалось
-                const response = await fetch('data.json?t=' + Math.random());
-                const data = await response.json();
-                
-                if (data.schedule) {
-                    document.getElementById('schedule').innerText = data.schedule;
-                    document.getElementById('last-update').innerText = "Данные получены";
-                } else {
-                    document.getElementById('schedule').innerText = "Пусто";
-                }
-            } catch (e) {
-                console.error(e);
-            }
+                const r = await fetch('data.json?v=' + Date.now());
+                const d = await r.json();
+                document.getElementById('sched-text').innerText = d.schedule || "НЕТ ДАННЫХ";
+            } catch(e) {}
         }
-        
-        loadSchedule();
-        setInterval(loadSchedule, 30000); // Обновляем данные каждые 30 сек
+        setInterval(refresh, 5000);
+        refresh();
     </script>
 </body>
 </html>
