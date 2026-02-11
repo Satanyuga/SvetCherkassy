@@ -1,22 +1,20 @@
-const VERSION = '4';
+const CACHE_NAME = 'svet-v10';
+const notified = new Set();
 
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
 
-// Память уведомлений (чтобы не дублировать)
-const notified = new Set();
-
 async function checkSchedules() {
     try {
-        const r = await fetch('data.json?v=' + Date.now());
-        const data = await r.json();
+        // Добавляем случайное число, чтобы браузер не подсовывал старый файл
+        const response = await fetch('data.json?v=' + Date.now());
+        const data = await response.json();
         
         const now = new Date();
         const kiev = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
         const curMin = kiev.getHours() * 60 + kiev.getMinutes();
-        const dateKey = kiev.getDate();
+        const day = kiev.getDate();
 
-        // Проверяем все группы, которые есть в базе
         for (const [group, sched] of Object.entries(data)) {
             const intervals = sched.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
             
@@ -25,24 +23,21 @@ async function checkSchedules() {
                 const s = parseMin(sStr);
                 const e = parseMin(eStr) || 1440;
 
-                // Ключи, чтобы не спамить
-                const offKey = `off-${group}-${s}-${dateKey}`;
-                const onKey = `on-${group}-${e}-${dateKey}`;
+                const offKey = `off-${group}-${s}-${day}`;
+                const onKey = `on-${group}-${e}-${day}`;
 
-                // Ровно за 15 минут
+                // Проверка за 15 минут
                 if (s - curMin === 15 && !notified.has(offKey)) {
-                    sendNotify("⚠️ Отключение!", `Группа ${group}: свет выключат через 15 мин (${sStr.trim()})`);
+                    sendNotify(`⚠️ Группа ${group}`, `Выключат через 15 мин (${sStr.trim()})`);
                     notified.add(offKey);
                 }
                 if (e - curMin === 15 && !notified.has(onKey)) {
-                    sendNotify("💡 Включение!", `Группа ${group}: свет дадут через 15 мин (${eStr.trim()})`);
+                    sendNotify(`💡 Группа ${group}`, `Включат через 15 мин (${eStr.trim()})`);
                     notified.add(onKey);
                 }
             });
         }
-    } catch (err) {
-        console.error('BG Error:', err);
-    }
+    } catch (err) {}
 }
 
 function parseMin(t) {
@@ -50,16 +45,16 @@ function parseMin(t) {
     return parseInt(p[0]) * 60 + parseInt(p[1]);
 }
 
-function sendNotify(title, body) {
+function sendNotify(title, msg) {
     self.registration.showNotification(title, {
-        body: body,
+        body: msg,
         icon: 'https://cdn-icons-png.flaticon.com/512/2988/2988014.png',
         badge: 'https://cdn-icons-png.flaticon.com/512/2988/2988014.png',
-        tag: 'svet-notif',
+        tag: 'svet-alert',
         renotify: true,
         requireInteraction: true
     });
 }
 
-// Запуск проверки каждые 30 секунд
-setInterval(checkSchedules, 30000);
+// Проверка трижды в минуту для надежности
+setInterval(checkSchedules, 20000);
