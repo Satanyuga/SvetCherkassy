@@ -4,7 +4,7 @@ import requests
 import base64
 from telethon import TelegramClient, events
 
-# Настройки из Render
+# Конфиг
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 API_ID = int(os.environ.get('TG_API_ID'))
 API_HASH = os.environ.get('TG_API_HASH')
@@ -14,34 +14,43 @@ GH_REPO = "Satanyuga/SvetCherkassy"
 client = TelegramClient('bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def update_github(new_schedule):
+    # Убираем лишние пробелы и приводим тире к одному виду, чтобы сайт не тупил
+    clean_data = new_schedule.replace('–', '-').replace('—', '-').strip()
+    
     url = f"https://api.github.com/repos/{GH_REPO}/contents/data.json"
     headers = {"Authorization": f"token {GH_TOKEN}"}
-    res = requests.get(url, headers=headers).json()
-    sha = res.get('sha')
-    content_str = f'{{"schedule": "{new_schedule}"}}'
-    encoded = base64.b64encode(content_str.encode()).decode()
-    payload = {"message": "Update schedule", "content": encoded, "sha": sha}
-    requests.put(url, json=payload, headers=headers)
-    print(f"--- ГРАФИК ОБНОВЛЕН: {new_schedule} ---")
+    
+    try:
+        res = requests.get(url, headers=headers).json()
+        sha = res.get('sha')
+        
+        content_str = f'{{"schedule": "{clean_data}"}}'
+        encoded = base64.b64encode(content_str.encode()).decode()
+        
+        payload = {"message": "Update schedule", "content": encoded, "sha": sha}
+        requests.put(url, json=payload, headers=headers)
+        print(f"--- УСПЕХ: Данные отправлены на GitHub: {clean_data} ---")
+    except Exception as e:
+        print(f"Ошибка при обновлении: {e}")
 
 async def check_last_messages():
-    print("Проверяю последние сообщения в канале...")
-    async for message in client.iter_messages('cherkassyoblenergo', limit=10):
+    async for message in client.iter_messages('cherkassyoblenergo', limit=15):
         if message.text:
-            match = re.search(r"4\.1:\s*([\d:–, -]+)", message.text)
+            # Ищем конкретно 4.1 и всё что после до конца строки
+            match = re.search(r"4\.1:\s*([\d:.\s–\-—,]+)", message.text)
             if match:
-                data = match.group(1).strip()
-                update_github(data)
+                update_github(match.group(1).strip())
                 break
 
-@client.on(events.NewMessage(chats='cherkassyoblenergo'))
+@client.on(events.NewMessage())
 async def handler(event):
-    match = re.search(r"4\.1:\s*([\d:–, -]+)", event.raw_text)
-    if match:
-        update_github(match.group(1).strip())
+    # Бот теперь слушает и канал, и твою личку
+    if event.text:
+        match = re.search(r"4\.1:\s*([\d:.\s–\-—,]+)", event.text)
+        if match:
+            update_github(match.group(1).strip())
 
-# При запуске проверяем историю, а потом слушаем новые посты
 with client:
     client.loop.run_until_complete(check_last_messages())
-    print("Бот запущен и мониторит канал в реальном времени!")
+    print("Бот в строю. Жду графики...")
     client.run_until_disconnected()
