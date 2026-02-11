@@ -8,16 +8,17 @@ from telebot import TeleBot, types
 
 # Настройки из твоих переменных в Render
 TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = os.environ.get("TG_API_ID") # Твой ID: 31895665
+# Используем твой ID 31895665, вписанный как TG_API_ID
+ADMIN_ID = os.environ.get("TG_API_ID") 
 APP_URL = "https://svetcherkassy.onrender.com"
 
 app = Flask(__name__)
 DATA_FILE = 'data.json'
-USERS_FILE = 'users.json' # Здесь храним подписчиков
+USERS_FILE = 'users.json'
 
 bot = TeleBot(TOKEN) if TOKEN else None
 
-# --- РАБОТА С ДАННЫМИ ---
+# --- ФУНКЦИИ ДАННЫХ ---
 def load_json(filename):
     if not os.path.exists(filename): return {}
     try:
@@ -28,7 +29,7 @@ def save_json(filename, data):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- ЛОГИКА ТЕЛЕГРАМ БОТА ---
+# --- МЕНЮ БОТА ---
 def get_main_menu(user_id):
     users = load_json(USERS_FILE)
     u_data = users.get(str(user_id), {})
@@ -50,7 +51,8 @@ def get_group_buttons():
 if bot:
     @bot.message_handler(commands=['start'])
     def start(message):
-        bot.send_message(message.chat.id, "Привет! Я бот Svet Monitor. Выбери свою очередь, чтобы получать уведомления.", reply_markup=get_main_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "Привет! Выбери свою очередь, чтобы получать уведомления об изменениях графика.", 
+                         reply_markup=get_main_menu(message.from_user.id))
 
     @bot.message_handler(func=lambda m: m.text and "Моя очередь" in m.text)
     def choose_group(message):
@@ -75,9 +77,10 @@ if bot:
         save_json(USERS_FILE, users)
         bot.answer_callback_query(call.id, f"Выбрана очередь {group}")
         bot.edit_message_text(f"✅ Твоя очередь успешно установлена: {group}", call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, "Теперь я буду присылать уведомления, если твой график изменится.", reply_markup=get_main_menu(uid))
+        bot.send_message(call.message.chat.id, "Теперь я пришлю уведомление, если график этой очереди изменится.", 
+                         reply_markup=get_main_menu(uid))
 
-    # --- ОБНОВЛЕНИЕ ГРАФИКА (ТОЛЬКО ДЛЯ ТЕБЯ) ---
+    # --- РАССЫЛКА ПРИ ОБНОВЛЕНИИ (ТОЛЬКО ДЛЯ ТЕБЯ) ---
     @bot.message_handler(func=lambda m: str(m.from_user.id) == str(ADMIN_ID))
     def admin_update(message):
         text = message.text
@@ -93,39 +96,22 @@ if bot:
                     p = line.split(":", 1)
                     g = p[0].replace("Группа", "").strip()
                     s = p[1].strip()
-                    data[g] = s
-                    updated_groups.append(g)
+                    if data.get(g) != s: # Если график реально изменился
+                        data[g] = s
+                        updated_groups.append(g)
                 except: continue
         
         if updated_groups:
             save_json(DATA_FILE, data)
             bot.reply_to(message, f"✅ Обновлено групп: {len(updated_groups)}")
             
-            # РАССЫЛКА УВЕДОМЛЕНИЙ ОБ ИЗМЕНЕНИИ
+            # Рассылаем уведомления пользователям этих групп
             for uid, u_data in users.items():
-                if u_data.get('group') in updated_groups:
+                target_group = u_data.get('group')
+                if target_group in updated_groups:
                     try:
-                        new_sched = data[u_data['group']]
-                        bot.send_message(uid, f"📢 Ваш график изменился!\n⚡️ Очередь {u_data['group']}:\n{new_sched}")
+                        bot.send_message(uid, f"📢 ВНИМАНИЕ! Ваш график изменился!\n⚡️ Очередь {target_group}:\n{data[target_group]}")
                     except: pass
-
-# --- ФОНОВЫЕ ЗАДАЧИ ---
-def check_15min_notif():
-    """Проверка уведомлений за 15 минут"""
-    while True:
-        try:
-            time.sleep(60)
-            data = load_json(DATA_FILE)
-            users = load_json(USERS_FILE)
-            now = new_date_kiev()
-            cur_m = now.getHours() * 60 + now.getMinutes()
-            
-            for uid, u_data in users.items():
-                if u_data.get('notif_15') and u_data.get('group') in data:
-                    sched = data[u_data['group']]
-                    # Логика поиска 15 минут (аналог sw.js)
-                    # Если найдено совпадение - бот отправляет сообщение
-        except: pass
 
 def keep_alive():
     while True:
