@@ -5,61 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Svet Cherkassy</title>
     <style>
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { 
-            background: #0a0a0a; 
-            color: #fff; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center;
-            min-height: 100vh; 
-            margin: 0; 
-            padding: 20px;
-            overflow: hidden;
+            background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; margin: 0; padding: 20px; overflow: hidden;
         }
+        .clock { position: absolute; top: 15px; right: 15px; border: 1px solid #00ffcc; color: #00ffcc; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
+        .settings-btn { position: absolute; top: 15px; left: 15px; font-size: 24px; cursor: pointer; z-index: 10; opacity: 0.7; }
         
-        .clock { position: absolute; top: 20px; right: 20px; border: 1px solid #00ffcc; color: #00ffcc; padding: 5px 12px; border-radius: 8px; font-family: monospace; font-size: 14px; }
-        .settings-btn { position: absolute; top: 20px; left: 20px; font-size: 24px; cursor: pointer; opacity: 0.8; transition: 0.3s; }
-        .settings-btn:hover { opacity: 1; transform: scale(1.1); }
-        
-        #status-label { color: #888; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; text-align: center; }
+        #status-label { color: #888; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; text-align: center; }
         
         .countdown { 
-            font-size: 18vw; 
-            font-weight: 900; 
-            font-family: 'Courier New', monospace; 
-            line-height: 1; 
-            margin: 10px 0 30px 0;
-            text-shadow: 0 0 20px rgba(0,255,204,0.3);
+            font-size: 20vw; font-weight: 900; font-family: 'Courier New', monospace; margin: 10px 0 20px 0; line-height: 1; text-align: center;
         }
         @media (min-width: 600px) { .countdown { font-size: 100px; } }
         
-        .red { color: #ff4444; text-shadow: 0 0 20px rgba(255,68,68,0.4); } 
-        .green { color: #00ff66; text-shadow: 0 0 20px rgba(0,255,102,0.4); }
+        .red { color: #ff4444; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
+        .green { color: #00ff66; text-shadow: 0 0 20px rgba(0,255,0,0.4); }
         
         .card { 
-            background: rgba(22, 22, 22, 0.8); 
-            padding: 25px; 
-            border-radius: 20px; 
-            width: 100%; 
-            max-width: 380px; 
-            border: 1px solid #333; 
+            background: #161616; padding: 25px; border-radius: 20px; width: 100%; max-width: 360px; 
+            border: 1px solid #333; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
-        .card-header { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 1px; display: flex; justify-content: space-between; }
+        .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; letter-spacing: 1px; }
         .schedule-text { font-size: 20px; color: #ffcc00; font-weight: bold; line-height: 1.5; }
-        
-        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
-        .modal-box { background: #111; padding: 30px; border-radius: 25px; text-align: center; border: 1px solid #444; width: 100%; max-width: 340px; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 25px 0; }
-        .g-btn { background: #1a1a1a; border: 1px solid #333; color: #fff; padding: 12px 5px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: 0.2s; }
-        .g-btn.active { border-color: #00ffcc; color: #00ffcc; background: rgba(0,255,204,0.1); }
-        
-        .tg-link { display: inline-block; margin-top: 10px; color: #0088cc; text-decoration: none; font-size: 14px; font-weight: bold; border-bottom: 1px solid #0088cc; padding-bottom: 2px; }
-        .close-btn { margin-top: 25px; background: #333; border: none; color: #fff; padding: 10px 30px; border-radius: 10px; cursor: pointer; width: 100%; }
+
+        #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
+        .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0; }
+        .g-btn { background:#222; border:1px solid #444; color:#fff; padding:12px 5px; border-radius:12px; cursor:pointer; font-size: 14px; }
+        .g-btn.active { border-color:#00ffcc; color:#00ffcc; background:rgba(0,255,204,0.1); }
+        .close-btn { width: 100%; padding: 15px; background: #00ffcc; border: none; color: #000; font-weight: bold; border-radius: 12px; margin-top: 10px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -67,127 +45,109 @@
     <div class="settings-btn" onclick="document.getElementById('modal').style.display='flex'">⚙️</div>
     <div class="clock" id="clock">--:--:--</div>
 
-    <div id="status-label">Загрузка данных...</div>
+    <div id="status-label">Загрузка...</div>
     <div id="timer" class="countdown">00:00:00</div>
 
     <div class="card">
-        <div class="card-header">
-            <span>ГРАФИК ОТКЛЮЧЕНИЙ</span>
-            <span id="current-group">ОЧЕРЕДЬ: --</span>
-        </div>
-        <div class="schedule-text" id="sched-display">Синхронизация...</div>
+        <div class="card-header"><span>ГРАФИК</span> <span id="current-group">ГРУППА --</span></div>
+        <div id="sched-display" class="schedule-text">Синхронизация с ботом...</div>
     </div>
 
     <div id="modal">
         <div class="modal-box">
             <h3 style="margin-top:0">ВАША ОЧЕРЕДЬ</h3>
             <div class="grid" id="grid"></div>
-            <a href="https://t.me/CherkassySvet_bot" class="tg-link">ПЕРЕЙТИ В БОТ 🔔</a>
-            <button class="close-btn" onclick="document.getElementById('modal').style.display='none'">ГОТОВО</button>
+            <button class="close-btn" onclick="document.getElementById('modal').style.display='none'">СОХРАНИТЬ</button>
         </div>
     </div>
 
     <script>
         let DATA = {};
         let GROUP = localStorage.getItem('userGroup') || "4.1";
-        
+
+        function parseTime(t) {
+            let p = t.trim().split(':');
+            let h = parseInt(p[0]);
+            let m = p[1] ? parseInt(p[1]) : 0;
+            return h * 60 + m;
+        }
+
         async function updateData() {
             try {
-                let r = await fetch('/data.json?t=' + Date.now());
+                let r = await fetch('/data.json?nocache=' + Date.now());
                 DATA = await r.json();
                 render();
-            } catch (e) { 
-                console.error("Ошибка загрузки:", e); 
-                document.getElementById('sched-display').innerText = "Ошибка связи";
-            }
+            } catch (e) { console.log("Data error"); }
         }
 
         function render() {
-            document.getElementById('current-group').innerText = "ОЧЕРЕДЬ: " + GROUP;
+            document.getElementById('current-group').innerText = "ГРУППА " + GROUP;
             let sched = DATA[GROUP];
             let disp = document.getElementById('sched-display');
             
             if (sched) {
                 disp.innerHTML = sched.split(',').map(s => `⚡ ${s.trim()}`).join('<br>');
-                calculateTimer(sched);
+                calculate(sched);
             } else {
-                disp.innerHTML = "<span style='color:#666'>График не найден</span>";
+                disp.innerText = "График не задан";
                 document.getElementById('timer').innerText = "00:00:00";
-                document.getElementById('status-label').innerText = "ДАННЫЕ ОТСУТСТВУЮТ";
+                document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
             }
-            
+
             let grid = document.getElementById('grid');
             grid.innerHTML = '';
             ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2'].forEach(g => {
-                let btn = document.createElement('button');
-                btn.className = `g-btn ${g === GROUP ? 'active' : ''}`;
-                btn.innerText = g;
-                btn.onclick = () => { GROUP = g; localStorage.setItem('userGroup', g); render(); };
-                grid.appendChild(btn);
+                let b = document.createElement('button');
+                b.className = `g-btn ${g === GROUP ? 'active' : ''}`;
+                b.innerText = g;
+                b.onclick = () => { GROUP = g; localStorage.setItem('userGroup', g); render(); };
+                grid.appendChild(b);
             });
         }
 
-        function calculateTimer(schedStr) {
-            let now = new Date();
-            let kiev = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
-            let curMin = kiev.getHours() * 60 + kiev.getMinutes();
-            let curSec = kiev.getSeconds();
+        function calculate(schedStr) {
+            let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            let cur = kiev.getHours() * 60 + kiev.getMinutes();
+            let sec = kiev.getSeconds();
 
-            let intervals = (schedStr.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || []).map(range => {
-                let [s, e] = range.split('-').map(t => {
-                    let p = t.trim().split(':');
-                    return parseInt(p[0]) * 60 + parseInt(p[1]);
-                });
+            let ranges = schedStr.match(/\d{1,2}(?::\d{2})?\s*-\s*\d{1,2}(?::\d{2})?/g) || [];
+            let intervals = ranges.map(r => {
+                let [s, e] = r.split('-').map(parseTime);
                 return {start: s, end: e};
             }).sort((a,b) => a.start - b.start);
 
-            let isOff = false;
-            let target = null;
-
+            let isOff = false, target = null;
             for (let i of intervals) {
-                if (curMin >= i.start && curMin < i.end) {
-                    isOff = true;
-                    target = i.end;
-                    break;
-                }
+                if (cur >= i.start && cur < i.end) { isOff = true; target = i.end; break; }
             }
-
             if (!isOff) {
-                let next = intervals.find(i => i.start > curMin);
+                let next = intervals.find(i => i.start > cur);
                 if (next) target = next.start;
             }
 
-            let timerEl = document.getElementById('timer');
-            let labelEl = document.getElementById('status-label');
+            let tEl = document.getElementById('timer');
+            let lEl = document.getElementById('status-label');
+            
+            lEl.innerText = isOff ? "Света не будет еще:" : (target ? "Свет будет еще:" : "График окончен");
+            tEl.className = "countdown " + (isOff ? "red" : "green");
 
-            if (isOff) {
-                timerEl.className = "countdown red";
-                labelEl.innerText = "СВЕТА НЕ БУДЕТ ЕЩЕ:";
-            } else {
-                timerEl.className = "countdown green";
-                labelEl.innerText = target ? "СВЕТ БУДЕТ ЕЩЕ:" : "ГРАФИК ОКОНЧЕН";
-            }
-
-            if (target !== null) {
-                let diff = (target - curMin) * 60 - curSec;
+            if (target) {
+                let diff = (target - cur) * 60 - sec;
                 if (diff < 0) diff = 0;
-                let h = Math.floor(diff / 3600).toString().padStart(2, '0');
-                let m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-                let s = (diff % 60).toString().padStart(2, '0');
-                timerEl.innerText = `${h}:${m}:${s}`;
-            } else {
-                timerEl.innerText = "00:00:00";
-            }
+                let h = Math.floor(diff / 3600).toString().padStart(2,'0');
+                let m = Math.floor((diff % 3600) / 60).toString().padStart(2,'0');
+                let s = (diff % 60).toString().padStart(2,'0');
+                tEl.innerText = `${h}:${m}:${s}`;
+            } else { tEl.innerText = "00:00:00"; }
         }
 
         setInterval(() => {
-            let d = new Date().toLocaleString("en-GB", {timeZone: "Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
-            document.getElementById('clock').innerText = d;
-            if (DATA[GROUP]) calculateTimer(DATA[GROUP]);
+            document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            if (DATA[GROUP]) calculate(DATA[GROUP]);
         }, 1000);
 
-        setInterval(updateData, 10000);
         updateData();
+        setInterval(updateData, 10000);
     </script>
 </body>
 </html>
