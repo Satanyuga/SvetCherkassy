@@ -3,205 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Svet 4.1 App</title>
+    <title>Svet Monitor</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0a0a0a">
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { 
-            background: #0a0a0a; 
-            color: #fff; 
-            font-family: 'Segoe UI', Roboto, sans-serif; 
-            min-height: 100vh; 
-            margin: 0; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: center; 
-            align-items: center; 
-            overflow-x: hidden;
-            padding: 20px;
+            background: #0a0a0a; color: #fff; font-family: 'Segoe UI', Roboto, sans-serif; 
+            min-height: 100vh; margin: 0; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; overflow-x: hidden; padding: 20px;
         }
         
+        .settings-icon {
+            position: fixed; top: 15px; left: 15px; font-size: 1.5rem; cursor: pointer; z-index: 101; opacity: 0.5;
+            padding: 10px;
+        }
+
         .clock { 
-            position: fixed; 
-            top: 15px; 
-            right: 15px; 
-            color: #00ffcc; 
-            border: 1px solid #00ffcc; 
-            padding: 4px 10px; 
-            border-radius: 6px; 
-            font-family: monospace; 
-            font-size: 0.8rem;
-            z-index: 100;
+            position: fixed; top: 15px; right: 15px; color: #00ffcc; border: 1px solid #00ffcc; 
+            padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 0.8rem; z-index: 100;
             background: rgba(10, 10, 10, 0.8);
         }
         
         .countdown { 
-            font-size: clamp(3rem, 15vw, 4.5rem);
-            font-weight: bold; 
-            margin-bottom: 5px; 
-            font-family: monospace; 
-            line-height: 1;
+            font-size: clamp(3rem, 15vw, 4.5rem); font-weight: bold; margin-bottom: 5px; 
+            font-family: monospace; line-height: 1;
         }
         
         .timer-red { color: #ff4444; text-shadow: 0 0 15px rgba(255, 68, 68, 0.3); }
         .timer-green { color: #00ff66; text-shadow: 0 0 15px rgba(0, 255, 102, 0.3); }
         
         .timer-label { 
-            font-size: 0.85rem; 
-            color: #888; 
-            text-transform: uppercase; 
-            margin-bottom: 20px; 
-            font-weight: bold; 
-            letter-spacing: 1px;
+            font-size: 0.85rem; color: #888; text-transform: uppercase; 
+            margin-bottom: 20px; font-weight: bold; letter-spacing: 1px;
         }
 
-        /* Главная подложка */
         .card { 
-            background: #111; 
-            padding: 25px; 
-            border-radius: 22px; 
-            border: 1px solid #222; 
-            text-align: center; 
-            box-shadow: 0 12px 40px rgba(0,0,0,0.8); 
-            width: 100%; 
-            max-width: 400px;
-            position: relative;
+            background: #111; padding: 25px; border-radius: 22px; border: 1px solid #222; 
+            text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.8); width: 100%; max-width: 400px;
         }
         
         .schedule { 
-            font-size: 1.5rem; 
-            color: #ffcc00; 
-            font-weight: bold; 
-            margin: 10px 0; 
-            line-height: 1.5; 
-            text-align: left; 
-            display: inline-block;
+            font-size: 1.5rem; color: #ffcc00; font-weight: bold; margin: 10px 0; 
+            line-height: 1.5; text-align: left; display: inline-block;
         }
         
-        .group-label { 
-            color: #444; 
-            text-transform: uppercase; 
-            letter-spacing: 2px; 
-            font-size: 0.65rem; 
-            margin-top: 12px; 
-        }
+        .group-header { color: #444; font-size: 0.65rem; letter-spacing: 3px; margin-bottom: 8px; text-transform: uppercase; }
 
-        /* Контейнер статусов теперь под карточкой и слева */
-        .status-wrapper {
-            width: 100%;
-            max-width: 400px;
-            margin-top: 15px; /* Отступ под подложкой */
-            padding-left: 10px; /* Сдвиг влево */
-            align-self: center;
-        }
-        
-        .status-item { 
-            display: flex; 
-            align-items: center; 
-            margin-bottom: 6px; 
-            font-size: 0.7rem; 
-            color: #555;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
+        .status-wrapper { width: 100%; max-width: 400px; margin-top: 15px; padding-left: 10px; }
+        .status-item { display: flex; align-items: center; margin-bottom: 6px; font-size: 0.7rem; color: #555; text-transform: uppercase; }
         .dot { width: 7px; height: 7px; border-radius: 50%; margin-right: 10px; }
-        .online { background: #00ff66; box-shadow: 0 0 5px #00ff66; }
-        .offline { background: #ff4444; box-shadow: 0 0 5px #ff4444; }
+        .online { background: #00ff66; } .offline { background: #ff4444; }
+
+        #group-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 200; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: #111; padding: 25px; border-radius: 20px; text-align: center; width: 90%; max-width: 320px;
+            border: 1px solid #333;
+        }
+        .group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .group-btn {
+            padding: 15px; background: #1a1a1a; border: 1px solid #333; color: #fff; 
+            border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem;
+        }
+        .group-btn:active { background: #00ffcc; color: #000; }
 
         .notif-btn {
-            background: #1a1a1a;
-            color: #00ffcc;
-            border: 1px solid #00ffcc;
-            padding: 12px;
-            border-radius: 14px;
-            margin-top: 15px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            width: 100%;
-            transition: 0.2s;
-            font-weight: bold;
+            background: #1a1a1a; color: #00ffcc; border: 1px solid #00ffcc; padding: 12px;
+            border-radius: 14px; margin-top: 15px; cursor: pointer; font-size: 0.85rem; width: 100%; font-weight: bold;
         }
-        .notif-btn.active {
-            border-color: #555;
-            color: #555;
-        }
+        .notif-btn.active { border-color: #ff4444; color: #ff4444; }
     </style>
 </head>
 <body>
 
+    <div class="settings-icon" onclick="openModal()">⚙️</div>
     <div class="clock" id="kiev-time">KIEV: --:--:--</div>
 
     <div id="timer-val" class="countdown">00:00:00</div>
-    <div id="timer-comment" class="timer-label">СИНХРОНИЗАЦИЯ...</div>
+    <div id="timer-comment" class="timer-label">ОЖИДАНИЕ...</div>
 
     <div class="card">
-        <div style="color: #333; font-size: 0.6rem; letter-spacing: 3px; margin-bottom: 8px;">ГРАФИК ОТКЛЮЧЕНИЙ 4.1</div>
-        <div class="schedule" id="sched-text">ЗАГРУЗКА...</div>
-        <div class="group-label">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
+        <div class="group-header" id="group-title">ГРУППА --</div>
+        <div class="schedule" id="sched-text">ЗАГРУЗКА ДАННЫХ...</div>
+        <div style="color: #444; text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; margin-top: 12px;">ЧЕРКАССЫ ОБЛЭНЕРГО</div>
         <button id="notif-btn" class="notif-btn" onclick="handleNotif()">🔔 Включить уведомления</button>
     </div>
 
     <div class="status-wrapper">
-        <div class="status-item"><div class="dot offline"></div> Группа облэнерго: ОТКЛЮЧЕН (ЛИЧКА)</div>
-        <div class="status-item"><div class="dot online"></div> Телеграм бот: ПОДКЛЮЧЕН</div>
+        <div class="status-item"><div class="dot offline"></div> ОБЛЭНЕРГО: ЛИЧКА</div>
+        <div class="status-item"><div class="dot online"></div> БОТ: ПОДКЛЮЧЕН</div>
+    </div>
+
+    <div id="group-modal">
+        <div class="modal-content">
+            <h3 style="margin:0; color:#00ffcc;">ВАША ГРУППА?</h3>
+            <div class="group-grid">
+                <button class="group-btn" onclick="setGroup('1.1')">1.1</button>
+                <button class="group-btn" onclick="setGroup('1.2')">1.2</button>
+                <button class="group-btn" onclick="setGroup('2.1')">2.1</button>
+                <button class="group-btn" onclick="setGroup('2.2')">2.2</button>
+                <button class="group-btn" onclick="setGroup('3.1')">3.1</button>
+                <button class="group-btn" onclick="setGroup('3.2')">3.2</button>
+                <button class="group-btn" onclick="setGroup('4.1')">4.1</button>
+                <button class="group-btn" onclick="setGroup('4.2')">4.2</button>
+                <button class="group-btn" onclick="setGroup('5.1')">5.1</button>
+                <button class="group-btn" onclick="setGroup('5.2')">5.2</button>
+                <button class="group-btn" onclick="setGroup('6.1')">6.1</button>
+                <button class="group-btn" onclick="setGroup('6.2')">6.2</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        let currentSchedule = "";
+        let fullData = {};
+        let userGroup = localStorage.getItem('userGroup');
 
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
+        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+
+        function openModal() { document.getElementById('group-modal').style.display = 'flex'; }
+        
+        function setGroup(g) {
+            userGroup = g;
+            localStorage.setItem('userGroup', g);
+            document.getElementById('group-modal').style.display = 'none';
+            renderSchedule();
         }
 
-        window.onload = () => {
-            if (Notification.permission === 'granted') {
-                updateButtonState(true);
-            }
-        };
-
-        function handleNotif() {
-            if (!('Notification' in window)) return;
-            if (Notification.permission === 'granted') {
-                alert('Уведомления уже разрешены. Отключить их можно только в настройках браузера.');
-                updateButtonState(true);
-            } else {
-                Notification.requestPermission().then(p => {
-                    if (p === 'granted') {
-                        updateButtonState(true);
-                        alert('Уведомления включены!');
-                    }
-                });
-            }
-        }
-
-        function updateButtonState(isActive) {
-            const btn = document.getElementById('notif-btn');
-            if (isActive) {
-                btn.innerText = "🔕 Уведомления активны";
-                btn.classList.add('active');
-            }
-        }
-
-        function updateTime() {
-            const now = new Date();
-            const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-            const kievTimeStr = new Intl.DateTimeFormat('en-GB', options).format(now);
-            document.getElementById('kiev-time').innerText = "KIEV: " + kievTimeStr;
-            processLogic();
-        }
+        if (!userGroup) { openModal(); }
 
         async function refreshData() {
             try {
                 const r = await fetch('data.json?v=' + Date.now());
-                const d = await r.json();
-                if (d.schedule && d.schedule !== currentSchedule) {
-                    currentSchedule = d.schedule;
-                    const formatted = d.schedule.split(',').map(i => "⚡ " + i.trim()).join('<br>');
-                    document.getElementById('sched-text').innerHTML = formatted;
-                }
-            } catch(e) {}
+                fullData = await r.json();
+                renderSchedule();
+            } catch(e) { console.log("Ошибка загрузки"); }
+        }
+
+        function renderSchedule() {
+            if (!userGroup) return;
+            document.getElementById('group-title').innerText = "ГРАФИК ОТКЛЮЧЕНИЙ " + userGroup;
+            const raw = fullData[userGroup];
+            if (raw) {
+                document.getElementById('sched-text').innerHTML = raw.split(',').map(i => "⚡ " + i.trim()).join('<br>');
+            } else {
+                document.getElementById('sched-text').innerText = "ДАННЫЕ ОБНОВЛЯЮТСЯ...";
+            }
+            processLogic();
+        }
+
+        function handleNotif() {
+            if (Notification.permission === 'granted') {
+                alert('Уведомления активны. Отключить можно в настройках браузера.');
+            } else {
+                Notification.requestPermission().then(p => { if(p==='granted') location.reload(); });
+            }
         }
 
         function toMinutes(t) {
@@ -210,57 +168,52 @@
         }
 
         function processLogic() {
-            if (!currentSchedule) return;
+            const sched = fullData[userGroup];
+            if (!sched) return;
             const now = new Date();
             const kievTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             const curMin = kievTime.getHours() * 60 + kievTime.getMinutes();
             const curSec = kievTime.getSeconds();
             
-            const intervals = currentSchedule.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
+            const intervals = sched.match(/\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g) || [];
             let parsedIntervals = intervals.map(range => {
-                const [start, end] = range.split('-').map(toMinutes);
-                return { start, end: (end === 0 || end < start) ? 1440 : end };
+                const [s, e] = range.split('-').map(toMinutes);
+                return { start: s, end: (e === 0 || e < s) ? 1440 : e };
             }).sort((a, b) => a.start - b.start);
 
-            let isOff = false;
-            let targetMin = null;
-
-            for (let interval of parsedIntervals) {
-                if (curMin >= interval.start && curMin < interval.end) {
-                    isOff = true;
-                    targetMin = interval.end;
-                    break;
-                }
+            let isOff = false; let targetMin = null;
+            for (let i of parsedIntervals) {
+                if (curMin >= i.start && curMin < i.end) { isOff = true; targetMin = i.end; break; }
             }
-
             if (!isOff) {
-                const nextOff = parsedIntervals.find(i => i.start > curMin);
-                if (nextOff) targetMin = nextOff.start;
+                const next = parsedIntervals.find(i => i.start > curMin);
+                if (next) targetMin = next.start;
             }
 
-            const timerEl = document.getElementById('timer-val');
-            const commentEl = document.getElementById('timer-comment');
-
-            if (isOff) {
-                timerEl.className = "countdown timer-red";
-                commentEl.innerText = "ДО ВКЛЮЧЕНИЯ СВЕТА:";
-            } else {
-                timerEl.className = "countdown timer-green";
-                commentEl.innerText = "СВЕТ БУДЕТ ЕЩЕ:";
-            }
+            const tV = document.getElementById('timer-val');
+            const tC = document.getElementById('timer-comment');
+            if (isOff) { tV.className = "countdown timer-red"; tC.innerText = "ДО ВКЛЮЧЕНИЯ СВЕТА:"; }
+            else { tV.className = "countdown timer-green"; tC.innerText = "СВЕТ БУДЕТ ЕЩЕ:"; }
 
             if (targetMin !== null) {
                 const diff = (targetMin - curMin) * 60 - curSec;
-                if (diff > 0) {
-                    const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-                    const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-                    const s = (diff % 60).toString().padStart(2, '0');
-                    timerEl.innerText = `${h}:${m}:${s}`;
-                } else { timerEl.innerText = "00:00:00"; }
-            } else {
-                timerEl.innerText = "00:00:00";
-                commentEl.innerText = "ГРАФИК НА СЕГОДНЯ ЗАВЕРШЕН";
-            }
+                const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+                const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+                const s = (diff % 60).toString().padStart(2, '0');
+                tV.innerText = `${h}:${m}:${s}`;
+            } else { tV.innerText = "00:00:00"; tC.innerText = "ГРАФИК ЗАВЕРШЕН"; }
+        }
+
+        function updateTime() {
+            const now = new Date();
+            const options = { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+            document.getElementById('kiev-time').innerText = "KIEV: " + new Intl.DateTimeFormat('en-GB', options).format(now);
+            processLogic();
+        }
+
+        if (Notification.permission === 'granted') {
+            const b = document.getElementById('notif-btn');
+            b.innerText = "🔕 Уведомления активны"; b.classList.add('active');
         }
 
         setInterval(updateTime, 1000);
