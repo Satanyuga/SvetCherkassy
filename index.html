@@ -14,7 +14,6 @@
         .clock { position: absolute; top: 15px; right: 15px; border: 1px solid #00ffcc; color: #00ffcc; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
         .settings-btn { position: absolute; top: 15px; left: 15px; font-size: 24px; cursor: pointer; z-index: 10; opacity: 0.7; }
         
-        /* ВКЛАДКИ */
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .tab { 
             background: #222; padding: 10px 20px; border-radius: 10px; cursor: pointer; 
@@ -40,6 +39,21 @@
         }
         .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; text-align: center; letter-spacing: 1px; }
         .schedule-text { font-size: 18px; color: #ffcc00; font-weight: bold; line-height: 1.8; text-align: center; }
+        
+        /* ПОДСВЕТКА ТЕКУЩЕГО ИНТЕРВАЛА */
+        .schedule-line { 
+            display: inline-block; padding: 4px 8px; border-radius: 6px; margin: 2px 0; transition: all 0.3s; 
+        }
+        .schedule-line.active { 
+            background: rgba(255, 68, 68, 0.3); 
+            border-bottom: 3px solid #ff4444; 
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.5); 
+        }
+        
+        /* СТАТИСТИКА */
+        .stats { margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; font-size: 14px; }
+        .stats-row { display: flex; justify-content: space-between; margin: 5px 0; color: #888; }
+        .stats-value { color: #00ffcc; font-weight: bold; }
 
         #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
         .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
@@ -54,7 +68,6 @@
     <div class="settings-btn" onclick="document.getElementById('modal').style.display='flex'">⚙️</div>
     <div class="clock" id="clock">--:--:--</div>
 
-    <!-- ВКЛАДКИ -->
     <div class="tabs">
         <div class="tab active" id="tab-today" onclick="switchTab('today')">Сегодня</div>
         <div class="tab" id="tab-tomorrow" onclick="switchTab('tomorrow')">Завтра</div>
@@ -67,6 +80,17 @@
     <div class="card">
         <div class="card-header"><span id="current-group">ГРУППА --</span></div>
         <div id="sched-display" class="schedule-text">Синхронизация с ботом...</div>
+        
+        <div class="stats" id="stats-block" style="display:none;">
+            <div class="stats-row">
+                <span>Без света:</span>
+                <span class="stats-value" id="stats-off">0ч 0м</span>
+            </div>
+            <div class="stats-row">
+                <span>Со светом:</span>
+                <span class="stats-value" id="stats-on">0ч 0м</span>
+            </div>
+        </div>
     </div>
 
     <div id="modal">
@@ -107,6 +131,15 @@
             return `${day}.${month}.${year}`;
         }
 
+        function getYesterday() {
+            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            now.setDate(now.getDate() - 1);
+            let day = now.getDate().toString().padStart(2, '0');
+            let month = (now.getMonth() + 1).toString().padStart(2, '0');
+            let year = now.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+
         function switchTab(tab) {
             CURRENT_TAB = tab;
             document.getElementById('tab-today').classList.toggle('active', tab === 'today');
@@ -133,6 +166,36 @@
             }
         }
 
+        function calculateStats(schedStr) {
+            let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+            let totalOff = 0;
+            
+            ranges.forEach(range => {
+                let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                
+                // Если интервал переходит через полночь (21:00 – 00:00)
+                if (e <= s) {
+                    e += 1440; // Добавляем 24 часа
+                }
+                
+                totalOff += (e - s);
+            });
+            
+            // Ограничиваем максимум 24 часами
+            if (totalOff > 1440) totalOff = 1440;
+            
+            let totalOn = 1440 - totalOff;
+            
+            let offH = Math.floor(totalOff / 60);
+            let offM = totalOff % 60;
+            let onH = Math.floor(totalOn / 60);
+            let onM = totalOn % 60;
+            
+            document.getElementById('stats-off').innerText = `${offH}ч ${offM}м`;
+            document.getElementById('stats-on').innerText = `${onH}ч ${onM}м`;
+            document.getElementById('stats-block').style.display = 'block';
+        }
+
         function render() {
             let targetDate = CURRENT_TAB === 'today' ? getToday() : getTomorrow();
             document.getElementById('date-label').innerText = `График на: ${targetDate}`;
@@ -146,12 +209,56 @@
             }
             
             if (sched) {
-                disp.innerHTML = sched.split(',').map(s => `⚡ ${s.trim()}`).join('<br>');
-                calculate(sched);
+                // Парсим интервалы для подсветки текущего
+                let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+                let cur = kiev.getHours() * 60 + kiev.getMinutes();
+                let ranges = sched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                
+                // Проверяем не идет ли отключение с вчерашнего дня
+                let continuesFromYesterday = false;
+                if (CURRENT_TAB === 'today') {
+                    let yesterday = getYesterday();
+                    if (DATA && DATA.dates && DATA.dates[yesterday] && DATA.dates[yesterday][GROUP]) {
+                        let yesterdaySched = DATA.dates[yesterday][GROUP];
+                        let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                        
+                        for (let range of yesterdayRanges) {
+                            let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                            if (e < s && cur < e) {
+                                continuesFromYesterday = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Создаем HTML с подсветкой
+                let html = ranges.map(range => {
+                    let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    
+                    let isActive = false;
+                    if (CURRENT_TAB === 'today') {
+                        // Обычный интервал внутри дня
+                        if (e > s) {
+                            isActive = (cur >= s && cur < e);
+                        } else {
+                            // Интервал переходит через полночь
+                            isActive = (cur >= s || cur < e);
+                        }
+                    }
+                    
+                    let className = isActive ? 'schedule-line active' : 'schedule-line';
+                    return `<span class="${className}">⚡ ${range.trim()}</span>`;
+                }).join('<br>');
+                
+                disp.innerHTML = html;
+                calculateStats(sched);
+                calculate(sched, targetDate);
             } else {
                 disp.innerText = "График еще не сформирован";
                 document.getElementById('timer').innerText = "00:00:00";
                 document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
+                document.getElementById('stats-block').style.display = 'none';
             }
 
             let grid = document.getElementById('grid');
@@ -165,7 +272,7 @@
             });
         }
 
-        function calculate(schedStr) {
+        function calculate(schedStr, targetDate) {
             if (CURRENT_TAB !== 'today') {
                 document.getElementById('timer').innerText = "00:00:00";
                 document.getElementById('status-label').innerText = "График на завтра";
@@ -182,7 +289,7 @@
             console.log('Найденные интервалы:', ranges);
             
             let intervals = ranges.map(r => {
-                let [s, e] = r.split(/[–\-—]/).map(parseTime);
+                let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
                 return {start: s, end: e};
             }).sort((a,b) => a.start - b.start);
 
@@ -191,15 +298,55 @@
 
             let isOff = false, target = null;
             
-            for (let i of intervals) {
-                if (cur >= i.start && cur < i.end) { 
-                    isOff = true; 
-                    target = i.end; 
-                    console.log('ОТКЛЮЧЕНИЕ! До включения:', target - cur, 'минут');
-                    break; 
+            // Сначала проверяем не продолжается ли отключение с вчерашнего дня
+            let yesterday = getYesterday();
+            if (DATA && DATA.dates && DATA.dates[yesterday] && DATA.dates[yesterday][GROUP]) {
+                let yesterdaySched = DATA.dates[yesterday][GROUP];
+                let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                
+                for (let range of yesterdayRanges) {
+                    let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    
+                    // Если конец раньше начала - переход через полночь
+                    if (e < s) {
+                        if (cur < e) {
+                            isOff = true;
+                            target = e;
+                            console.log('ОТКЛЮЧЕНИЕ продолжается с вчерашнего дня! До включения:', target - cur, 'минут');
+                            break;
+                        }
+                    }
                 }
             }
             
+            // Проверяем текущие интервалы
+            if (!isOff) {
+                for (let i of intervals) {
+                    let start = i.start;
+                    let end = i.end;
+                    
+                    // Интервал переходит через полночь (21:00 - 00:00)
+                    if (end <= start) {
+                        // Проверяем: либо мы после начала, либо до конца
+                        if (cur >= start || cur < end) {
+                            isOff = true;
+                            target = end;
+                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До включения:', end <= cur ? (1440 - cur + end) : (end - cur), 'минут');
+                            break;
+                        }
+                    } else {
+                        // Обычный интервал внутри дня
+                        if (cur >= start && cur < end) {
+                            isOff = true;
+                            target = end;
+                            console.log('ОТКЛЮЧЕНИЕ! До включения:', target - cur, 'минут');
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Если свет есть - ищем следующее отключение
             if (!isOff) {
                 let next = intervals.find(i => i.start > cur);
                 if (next) {
@@ -234,7 +381,7 @@
             if (CURRENT_TAB === 'today') {
                 let targetDate = getToday();
                 if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                    calculate(DATA.dates[targetDate][GROUP]);
+                    calculate(DATA.dates[targetDate][GROUP], targetDate);
                 }
             }
         }, 1000);
