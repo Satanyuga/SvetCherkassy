@@ -50,10 +50,22 @@
             box-shadow: 0 0 10px rgba(255, 68, 68, 0.5); 
         }
         
+        /* ПОЛОСКА ТЕКУЩЕГО ВРЕМЕНИ (когда свет есть) */
+        .current-time-marker { 
+            display: block; 
+            height: 3px; 
+            background: #00ff66; 
+            margin: 8px 0; 
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(0, 255, 102, 0.6);
+        }
+        
         /* СТАТИСТИКА */
         .stats { margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; font-size: 14px; }
         .stats-row { display: flex; justify-content: space-between; margin: 5px 0; color: #888; }
-        .stats-value { color: #00ffcc; font-weight: bold; }
+        .stats-value { font-weight: bold; }
+        .stats-value.red { color: #ff4444; }
+        .stats-value.green { color: #00ff66; }
 
         #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
         .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
@@ -84,11 +96,11 @@
         <div class="stats" id="stats-block" style="display:none;">
             <div class="stats-row">
                 <span>Без света:</span>
-                <span class="stats-value" id="stats-off">0ч 0м</span>
+                <span class="stats-value red" id="stats-off">0ч 0м</span>
             </div>
             <div class="stats-row">
                 <span>Со светом:</span>
-                <span class="stats-value" id="stats-on">0ч 0м</span>
+                <span class="stats-value green" id="stats-on">0ч 0м</span>
             </div>
         </div>
     </div>
@@ -232,9 +244,20 @@
                     }
                 }
                 
-                // Создаем HTML с подсветкой
-                let html = ranges.map(range => {
+                // Создаем HTML с подсветкой и полоской времени
+                let htmlParts = [];
+                let prevEnd = 0;
+                
+                ranges.forEach((range, idx) => {
                     let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    
+                    // ПОЛОСКА МЕЖДУ ИНТЕРВАЛАМИ (когда свет есть)
+                    if (CURRENT_TAB === 'today' && idx > 0) {
+                        // Если текущее время между концом предыдущего и началом текущего
+                        if (cur > prevEnd && cur < s) {
+                            htmlParts.push('<div class="current-time-marker"></div>');
+                        }
+                    }
                     
                     let isActive = false;
                     if (CURRENT_TAB === 'today') {
@@ -248,10 +271,12 @@
                     }
                     
                     let className = isActive ? 'schedule-line active' : 'schedule-line';
-                    return `<span class="${className}">⚡ ${range.trim()}</span>`;
-                }).join('<br>');
+                    htmlParts.push(`<span class="${className}">⚡ ${range.trim()}</span>`);
+                    
+                    prevEnd = e > s ? e : 1440; // Запоминаем конец интервала
+                });
                 
-                disp.innerHTML = html;
+                disp.innerHTML = htmlParts.join('<br>');
                 calculateStats(sched);
                 calculate(sched, targetDate);
             } else {
