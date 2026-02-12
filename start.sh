@@ -15,7 +15,7 @@ if [ -f "userbot_session.session" ]; then
     echo "✅ Основной бот запущен (PID: $MAIN_PID)"
     echo "✅ UserBot запущен (PID: $USERBOT_PID)"
 else
-    echo "⚠️ userbot_session.session не найден - UserBot отключен"
+    echo "���️ userbot_session.session не найден - UserBot отключен"
     echo "✅ Только основной бот запущен (PID: $MAIN_PID)"
     USERBOT_PID=""
 fi
