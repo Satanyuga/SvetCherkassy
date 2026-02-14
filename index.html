@@ -296,22 +296,16 @@
             
             let isOff = false, target = null, targetIsNextDay = false;
             
-            // ТАЙМЕР РАБОТАЕТ ДЛЯ ОБЕИХ ВКЛАДОК
-            let currentSched = CURRENT_TAB === 'today' ? todaySched : tomorrowSched;
+            // ТАЙМЕР ВСЕГДА РАБОТАЕТ С ТЕКУЩИМ ВРЕМЕНЕМ (не зависит от вкладки!)
             
-            if (!currentSched) {
+            if (!todaySched && !tomorrowSched) {
                 document.getElementById('timer').innerText = "00:00:00";
                 document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
                 return;
             }
             
-            let ranges = currentSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
-            
-            // Для вкладки "ЗАВТРА" считаем как будто сейчас 00:00
-            let effectiveCur = CURRENT_TAB === 'tomorrow' ? 0 : cur;
-            
-            // Проверяем продолжение с вчерашнего дня (только для "Сегодня")
-            if (CURRENT_TAB === 'today' && yesterdaySched) {
+            // Проверяем продолжение с вчерашнего дня
+            if (yesterdaySched) {
                 let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 
                 for (let range of yesterdayRanges) {
@@ -327,12 +321,13 @@
                 }
             }
             
-            // Проверяем текущие интервалы
-            if (!isOff) {
+            // Проверяем текущие интервалы СЕГОДНЯ
+            if (!isOff && todaySched) {
+                let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 let intervals = ranges.map(r => {
                     let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
                     if (e === 0) e = 1440;
-                    return {start: s, end: e, raw: r};
+                    return {start: s, end: e};
                 }).sort((a,b) => a.start - b.start);
                 
                 for (let i of intervals) {
@@ -341,23 +336,15 @@
                     
                     // Интервал переходит через полночь
                     if (end <= start) {
-                        if (CURRENT_TAB === 'today') {
-                            if (cur >= start || cur < end) {
-                                isOff = true;
-                                target = end;
-                                console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До:', end);
-                                break;
-                            }
-                        } else {
-                            // Завтра: считаем что cur=0, ищем первое отключение
-                            if (end > 0) {
-                                target = start;
-                                break;
-                            }
+                        if (cur >= start || cur < end) {
+                            isOff = true;
+                            target = end;
+                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До:', end);
+                            break;
                         }
                     } else {
                         // Обычный интервал
-                        if (effectiveCur >= start && effectiveCur < end) {
+                        if (cur >= start && cur < end) {
                             isOff = true;
                             target = end;
                             console.log('ОТКЛЮЧЕНИЕ! До:', end);
@@ -368,31 +355,26 @@
             }
             
             // Если свет есть - ищем следующее отключение
-            if (!isOff) {
+            if (!isOff && todaySched) {
+                let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 let intervals = ranges.map(r => {
                     let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
                     if (e === 0) e = 1440;
                     return {start: s, end: e};
                 }).sort((a,b) => a.start - b.start);
                 
-                if (CURRENT_TAB === 'today') {
-                    let next = intervals.find(i => i.start > cur);
-                    if (next) {
-                        target = next.start;
-                    } else if (tomorrowSched) {
-                        // Ищем первое отключение завтра
-                        let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
-                        if (tomorrowRanges.length > 0) {
-                            let [s, e] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
-                            target = 1440 + s; // Следующий день
-                            targetIsNextDay = true;
-                        }
-                    }
-                } else {
-                    // Завтра: первое отключение
-                    if (intervals.length > 0) {
-                        target = 1440 + intervals[0].start;
+                let next = intervals.find(i => i.start > cur);
+                if (next) {
+                    target = next.start;
+                    console.log('Свет есть. До отключения:', target - cur, 'минут');
+                } else if (tomorrowSched) {
+                    // Ищем первое отключение завтра
+                    let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                    if (tomorrowRanges.length > 0) {
+                        let [s, e] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
+                        target = 1440 - cur + s; // Время до полуночи + время завтра
                         targetIsNextDay = true;
+                        console.log('Следующее отключение завтра:', target, 'минут');
                     }
                 }
             }
@@ -406,7 +388,7 @@
             if (target) {
                 let diff;
                 if (targetIsNextDay) {
-                    diff = (target - cur) * 60 - sec;
+                    diff = target * 60 - sec;
                 } else {
                     diff = (target - cur) * 60 - sec;
                 }
