@@ -23,25 +23,21 @@ UA_MONTHS = {
 # --- КОНФИГУРАЦИЯ ---
 ADMIN_ID = 815422710  
 TOKEN = os.environ.get("BOT_TOKEN")
-GITHUB_TOKEN = os.environ.get("GH_TOKEN")  # Твоя переменная в Render
-GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")  # Можно задать вручную или брать из Render
+GITHUB_TOKEN = os.environ.get("GH_TOKEN")
+GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")
 APP_URL = "https://svetcherkassy.onrender.com" 
 
 app = Flask(__name__)
 DATA_FILE = 'data.json'
 USERS_FILE = 'users.json'
+PRIORITY_FILE = 'admin_priority.json'
 
 bot = TeleBot(TOKEN, threaded=False) if TOKEN else None
 
 # --- ПАРСИНГ ДАТЫ ---
 def parse_date_from_message(text):
-    """
-    Парсит дату из украинского текста
-    Примеры: '12 лютого', '13 лютого' → '12.02.2026', '13.02.2026'
-    """
+    """Парсит дату из украинского текста"""
     current_year = datetime.now().year
-    
-    # Ищем паттерн: число + украинский месяц
     pattern = r'(\d{1,2})\s+(' + '|'.join(UA_MONTHS.keys()) + r')'
     match = re.search(pattern, text.lower())
     
@@ -49,23 +45,22 @@ def parse_date_from_message(text):
         day = int(match.group(1))
         month_name = match.group(2)
         month = UA_MONTHS[month_name]
-        
         date_str = f"{day:02d}.{month:02d}.{current_year}"
         logger.info(f"📅 Распознана дата: {date_str}")
         return date_str
     
     return None
 
-# --- АВТОПИНГ (КАК В ТВОЕМ index.js) ---
+# --- АВТОПИНГ ---
 def keep_alive():
-    """Пингует сам себя каждые 5 минут чтобы Render не уснул"""
+    """Пингует сам себя каждые 5 минут"""
     while True:
         try:
-            time.sleep(300)  # 5 минут
+            time.sleep(300)
             requests.get(f"{APP_URL}/ping", timeout=10)
-            logger.info("🏓 Автопинг выполнен")
+            logger.info("🏓 Автопинг")
         except Exception as e:
-            logger.error(f"❌ Ошибка автопинга: {e}")
+            logger.error(f"❌ Автопинг: {e}")
 
 # --- ФАЙЛЫ ---
 def load_json(filename):
@@ -75,23 +70,23 @@ def load_json(filename):
         with open(filename, 'r', encoding='utf-8') as f: 
             return json.load(f)
     except Exception as e:
-        logger.error(f"❌ Ошибка загрузки {filename}: {e}")
+        logger.error(f"❌ Загрузка {filename}: {e}")
         return {}
 
 def save_json(filename, data):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info(f"✅ Сохранено в {filename}")
+        logger.info(f"✅ Сохранено {filename}")
         return True
     except Exception as e:
-        logger.error(f"❌ Ошибка сохранения {filename}: {e}")
+        logger.error(f"❌ Сохранение {filename}: {e}")
         return False
 
 def update_github_file(content):
-    """Обновляет data.json на GitHub для отображения на сайте"""
+    """Обновляет data.json на GitHub"""
     if not GITHUB_TOKEN:
-        logger.warning("⚠️ GH_TOKEN не установлен - файл не обновится на сайте!")
+        logger.warning("⚠️ GH_TOKEN не установлен")
         return False
     
     try:
@@ -101,18 +96,15 @@ def update_github_file(content):
             "Accept": "application/vnd.github.v3+json"
         }
         
-        # Получаем SHA текущего файла
         response = requests.get(url, headers=headers, timeout=10)
         sha = response.json().get("sha") if response.status_code == 200 else None
         
-        # Кодируем содержимое в base64
         import base64
         content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
         content_b64 = base64.b64encode(content_bytes).decode('utf-8')
         
-        # Отправляем на GitHub
         data = {
-            "message": "🔄 Обновление графиков от бота",
+            "message": "🔄 Обновление графиков",
             "content": content_b64,
             "branch": "main"
         }
@@ -122,26 +114,30 @@ def update_github_file(content):
         response = requests.put(url, headers=headers, json=data, timeout=15)
         
         if response.status_code in [200, 201]:
-            logger.info("✅ data.json обновлен на GitHub!")
+            logger.info("✅ GitHub обновлен")
             return True
         else:
-            logger.error(f"❌ Ошибка GitHub: {response.status_code} - {response.text}")
+            logger.error(f"❌ GitHub: {response.status_code}")
             return False
-            
     except Exception as e:
-        logger.error(f"❌ Ошибка обновления GitHub: {e}")
+        logger.error(f"❌ GitHub: {e}")
         return False
+
+def mark_admin_edit(date_str):
+    """Отмечает приоритет админа"""
+    priority = load_json(PRIORITY_FILE)
+    if 'edited_dates' not in priority:
+        priority['edited_dates'] = []
+    
+    if date_str not in priority['edited_dates']:
+        priority['edited_dates'].append(date_str)
+        save_json(PRIORITY_FILE, priority)
+        logger.info(f"📝 Приоритет админа: {date_str}")
 
 # --- ПАРСИНГ ГРАФИКА ---
 def parse_schedule_message(text):
-    """
-    Парсит сообщение формата:
-    1.1: 01:00 – 04:30, 06:30 – 10:30, 13:00 – 16:30, 18:30 – 22:30
-    2.1: 00:00 – 01:00, 03:30 – 07:00, ...
-    """
+    """Парсит графики"""
     schedules = {}
-    
-    # Ищем строки вида "X.X: время"
     lines = text.split('\n')
     
     for line in lines:
@@ -149,17 +145,15 @@ def parse_schedule_message(text):
         if not line:
             continue
             
-        # Паттерн: "1.1:" или "1.1 " в начале строки, затем время
         match = re.match(r'^(\d+\.\d+)\s*:?\s*(.+)$', line)
         
         if match:
             group = match.group(1).strip()
             schedule_text = match.group(2).strip()
             
-            # Проверяем, что в расписании есть временные диапазоны
             if re.search(r'\d{1,2}:\d{2}', schedule_text):
                 schedules[group] = schedule_text
-                logger.info(f"📋 Распознана очередь {group}: {schedule_text[:50]}...")
+                logger.info(f"📋 Очередь {group}")
     
     return schedules
 
@@ -178,68 +172,62 @@ def get_menu(uid):
     return markup
 
 if bot:
-    # --- АДМИН (ТВОЙ ID) ---
-    @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
-    def admin_logic(message):
+    # --- ПЕРЕСЫЛКА ИЗ КАНАЛА ---
+    @bot.message_handler(content_types=['text'], func=lambda m: m.from_user.id == ADMIN_ID and m.forward_from_chat is not None)
+    def forward_handler(message):
+        """Обработка пересылок из канала"""
         text = message.text
-        if not text: 
+        if not text:
             return
-
-        # Если это команды меню - обрабатываем как обычный юзер
-        if "Моя очередь" in text or "Уведомлять о изменениях" in text:
-            user_logic(message)
-            return
-
-        logger.info(f"\n📨 Получено сообщение от админа (ID {ADMIN_ID})")
         
-        # Парсим дату из сообщения
+        logger.info(f"\n📨 Пересылка из {message.forward_from_chat.title if message.forward_from_chat else 'канала'}")
+        
         date_str = parse_date_from_message(text)
         if not date_str:
-            logger.warning("⚠️ Не удалось распознать дату в сообщении")
-            bot.reply_to(message, "⚠️ Не удалось распознать дату.\nУкажите дату в формате: '12 лютого' или '13 лютого'")
+            bot.reply_to(message, "⚠️ Дата не распознана")
             return
         
-        # Парсинг графика
+        # Проверка приоритета
+        priority = load_json(PRIORITY_FILE)
+        if date_str in priority.get('edited_dates', []):
+            bot.reply_to(message, 
+                f"⚠️ График на {date_str} УЖЕ отредактирован вами.\n"
+                f"Пересылка игнорируется."
+            )
+            return
+        
         parsed_schedules = parse_schedule_message(text)
         
         if not parsed_schedules:
-            bot.reply_to(message, "⚠️ Не удалось распознать графики.\n\nФормат:\n1.1: 01:00 – 04:30, 06:30 – 10:30\n2.1: 00:00 – 01:00, 03:30 – 07:00")
-            logger.warning("❌ Графики не распознаны")
+            bot.reply_to(message, "⚠️ Графики не распознаны")
             return
         
-        # Загружаем текущие данные
         data = load_json(DATA_FILE)
         
-        # Создаем структуру с датой если её еще нет
         if not isinstance(data, dict) or 'dates' not in data:
             data = {'dates': {}}
         
-        # Создаем запись для даты если её нет
         if date_str not in data['dates']:
             data['dates'][date_str] = {}
         
         updated_groups = []
-        
-        # Обновляем графики для конкретной даты
         for group, schedule in parsed_schedules.items():
             data['dates'][date_str][group] = schedule
             updated_groups.append(group)
         
-        # Сохраняем локально
         if save_json(DATA_FILE, data):
-            logger.info(f"✅ Обновлены очереди для {date_str}: {', '.join(updated_groups)}")
+            logger.info(f"✅ Из канала: {', '.join(updated_groups)}")
             
-            # Обновляем на GitHub
             github_success = update_github_file(data)
             
-            # Подтверждение админу
-            confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
-            confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
-            confirmation += f"🌐 GitHub: {'✅ Обновлен' if github_success else '❌ Ошибка (проверь GH_TOKEN)'}\n\n"
+            bot.reply_to(message, 
+                f"✅ ИЗ КАНАЛА на {date_str}\n\n"
+                f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
+                f"🌐 GitHub: {'✅' if github_success else '❌'}\n\n"
+                f"ℹ️ БЕЗ приоритета админа"
+            )
             
-            bot.reply_to(message, confirmation)
-            
-            # УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ
+            # Уведомления
             users = load_json(USERS_FILE)
             notified_count = 0
             
@@ -250,23 +238,97 @@ if bot:
                     try:
                         schedule_text = data['dates'][date_str][user_group]
                         notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
-                        notification += f"📍 Ваша очередь: {user_group}\n\n"
+                        notification += f"📍 Очередь: {user_group}\n\n"
                         notification += f"⚡ Отключения:\n{schedule_text}"
                         
                         bot.send_message(int(uid_str), notification)
                         notified_count += 1
-                        logger.info(f"✅ Уведомление отправлено пользователю {uid_str} (очередь {user_group})")
-                        time.sleep(0.05)  # Чтобы не словить лимит Telegram
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Не удалось отправить пользователю {uid_str}: {e}")
+                        time.sleep(0.05)
+                    except:
+                        pass
             
-            # Итоговый отчет админу
-            report = f"📊 Уведомлено пользователей: {notified_count}"
+            bot.send_message(ADMIN_ID, f"📊 Уведомлено: {notified_count}")
+
+    # --- АДМИН ---
+    @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
+    def admin_logic(message):
+        text = message.text
+        if not text: 
+            return
+
+        if "Моя очередь" in text or "Уведомлять о изменениях" in text:
+            user_logic(message)
+            return
+
+        logger.info(f"\n📨 Админ (ID {ADMIN_ID})")
+        
+        date_str = parse_date_from_message(text)
+        if not date_str:
+            logger.warning("⚠️ Дата не распознана")
+            bot.reply_to(message, "⚠️ Дата не распознана.\nУкажите: '12 лютого'")
+            return
+        
+        parsed_schedules = parse_schedule_message(text)
+        
+        if not parsed_schedules:
+            bot.reply_to(message, "⚠️ Графики не распознаны.\n\nФормат:\n1.1: 01:00 – 04:30")
+            logger.warning("❌ Графики не распознаны")
+            return
+        
+        data = load_json(DATA_FILE)
+        
+        if not isinstance(data, dict) or 'dates' not in data:
+            data = {'dates': {}}
+        
+        if date_str not in data['dates']:
+            data['dates'][date_str] = {}
+        
+        updated_groups = []
+        
+        for group, schedule in parsed_schedules.items():
+            data['dates'][date_str][group] = schedule
+            updated_groups.append(group)
+        
+        if save_json(DATA_FILE, data):
+            logger.info(f"✅ Обновлено: {', '.join(updated_groups)}")
+            
+            # ПРИОРИТЕТ
+            mark_admin_edit(date_str)
+            
+            github_success = update_github_file(data)
+            
+            confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
+            confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
+            confirmation += f"🌐 GitHub: {'✅' if github_success else '❌'}\n"
+            confirmation += f"🎯 Приоритет: АДМИН\n\n"
+            
+            bot.reply_to(message, confirmation)
+            
+            users = load_json(USERS_FILE)
+            notified_count = 0
+            
+            for uid_str, u_data in users.items():
+                user_group = u_data.get('group')
+                
+                if user_group in updated_groups:
+                    try:
+                        schedule_text = data['dates'][date_str][user_group]
+                        notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
+                        notification += f"📍 Очередь: {user_group}\n\n"
+                        notification += f"⚡ Отключения:\n{schedule_text}"
+                        
+                        bot.send_message(int(uid_str), notification)
+                        notified_count += 1
+                        logger.info(f"✅ Уведомление {uid_str}")
+                        time.sleep(0.05)
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка {uid_str}: {e}")
+            
+            report = f"📊 Уведомлено: {notified_count}"
             bot.send_message(ADMIN_ID, report)
-            logger.info(f"\n✅ Обработка завершена: {notified_count} уведомлений отправлено")
+            logger.info(f"\n✅ Готово: {notified_count} уведомлений")
         else:
-            bot.reply_to(message, "❌ Ошибка сохранения графиков")
+            bot.reply_to(message, "❌ Ошибка сохранения")
 
     # --- ЮЗЕРЫ ---
     @bot.message_handler(commands=['start'])
@@ -274,14 +336,11 @@ if bot:
         uid = str(message.from_user.id)
         users = load_json(USERS_FILE)
         
-        # Инициализируем нового пользователя
         if uid not in users:
             users[uid] = {'group': None, 'notif_15': False}
             save_json(USERS_FILE, users)
         
-        welcome = "⚡ Добро пожаловать в бот мониторинга отключений света!\n\n"
-        welcome += "Выберите вашу очередь через меню ниже."
-        
+        welcome = "⚡ Добро пожаловать!\n\nВыберите очередь через меню."
         bot.send_message(message.chat.id, welcome, reply_markup=get_menu(message.from_user.id))
 
     @bot.message_handler(func=lambda m: True)
@@ -305,11 +364,10 @@ if bot:
             save_json(USERS_FILE, users)
             
             status = "ВКЛЮЧЕНЫ ✅" if users[uid]['notif_15'] else "ВЫКЛЮЧЕНЫ ❌"
-            bot.send_message(message.chat.id, f"🔔 Уведомления об изменениях {status}", reply_markup=get_menu(uid))
+            bot.send_message(message.chat.id, f"🔔 Уведомления {status}", reply_markup=get_menu(uid))
         else:
-            # Если это не админ и не команда меню
             if message.from_user.id != ADMIN_ID:
-                bot.send_message(message.chat.id, "⛔ Используйте кнопки меню ниже.")
+                bot.send_message(message.chat.id, "⛔ Используйте меню")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_handler(call):
@@ -324,62 +382,51 @@ if bot:
         save_json(USERS_FILE, users)
         
         bot.answer_callback_query(call.id, f"✅ Очередь {group}")
-        bot.edit_message_text(f"✅ Выбрана очередь: {group}", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(f"✅ Очередь: {group}", call.message.chat.id, call.message.message_id)
         
-        # Показываем график на сегодня
         data = load_json(DATA_FILE)
         today = datetime.now().strftime("%d.%m.%Y")
         
-        schedule = "График пока не установлен"
+        schedule = "График не установлен"
         if isinstance(data, dict) and 'dates' in data:
             if today in data['dates'] and group in data['dates'][today]:
                 schedule = data['dates'][today][group]
         
-        info = f"📍 Ваша очередь: {group}\n"
-        info += f"📅 График на {today}\n\n"
-        info += f"⚡ Отключения:\n{schedule}"
+        info = f"📍 Очередь: {group}\n📅 График на {today}\n\n⚡ Отключения:\n{schedule}"
         bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
 
 # --- ЗАПУСК БОТА ---
 def start_bot_polling():
-    """Запуск бота с обработкой ошибок и автоперезапуском"""
+    """Запуск бота"""
     if not bot:
-        logger.error("❌ Бот не создан - проверь BOT_TOKEN")
+        logger.error("❌ Бот не создан")
         return
     
     retry_delay = 5
-    max_retries = 3
     
-    for attempt in range(max_retries):
+    for attempt in range(3):
         try:
-            logger.info(f"🔄 Попытка запуска бота #{attempt + 1}")
+            logger.info(f"🔄 Запуск #{attempt + 1}")
             
-            # Принудительно удаляем webhook
             bot.delete_webhook(drop_pending_updates=True)
             time.sleep(2)
             
-            # Запускаем polling
-            logger.info("✅ Бот запущен в режиме polling")
+            logger.info("✅ Бот запущен")
             bot.infinity_polling(
                 timeout=60,
                 long_polling_timeout=60,
                 skip_pending=True,
                 allowed_updates=['message', 'callback_query']
             )
-            
-            # Если дошли сюда - polling остановился нормально
             break
-            
         except Exception as e:
-            logger.error(f"❌ Ошибка бота: {e}")
+            logger.error(f"❌ Ошибка: {e}")
             
-            if "409" in str(e) or "Conflict" in str(e):
-                logger.warning("⚠️ Конфликт 409 - другой процесс использует токен")
-                logger.info(f"⏳ Жду {retry_delay} сек перед повтором...")
+            if "409" in str(e):
+                logger.warning("⚠️ Конфликт 409")
                 time.sleep(retry_delay)
-                retry_delay *= 2  # Увеличиваем задержку
+                retry_delay *= 2
             else:
-                logger.error("❌ Критическая ошибка, перезапуск через 10 сек...")
                 time.sleep(10)
 
 # --- WEB ---
@@ -405,7 +452,6 @@ def ping():
 
 @app.route('/status')
 def status():
-    """Отладочный endpoint для проверки состояния"""
     data = load_json(DATA_FILE)
     users = load_json(USERS_FILE)
     
@@ -413,32 +459,26 @@ def status():
         "schedules_count": len(data),
         "users_count": len(users),
         "github_token_set": bool(GITHUB_TOKEN),
-        "bot_token_set": bool(TOKEN),
-        "app_url": APP_URL
+        "bot_token_set": bool(TOKEN)
     })
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("🚀 ЗАПУСК СЕРВИСА")
+    print("🚀 ЗАПУСК")
     print("="*60)
-    print(f"✅ BOT_TOKEN: {'Установлен' if TOKEN else '❌ НЕ УСТАНОВЛЕН'}")
-    print(f"✅ GH_TOKEN: {'Установлен' if GITHUB_TOKEN else '⚠️ НЕ УСТАНОВЛЕН'}")
-    print(f"✅ GH_REPO: {GITHUB_REPO}")
+    print(f"✅ BOT_TOKEN: {'Да' if TOKEN else '❌'}")
+    print(f"✅ GH_TOKEN: {'Да' if GITHUB_TOKEN else '⚠️'}")
     print(f"✅ ADMIN_ID: {ADMIN_ID}")
-    print(f"🌐 URL: {APP_URL}")
     print("="*60 + "\n")
     
-    # Запускаем автопинг в отдельном потоке
     ping_thread = threading.Thread(target=keep_alive, daemon=True)
     ping_thread.start()
-    logger.info("🏓 Автопинг активирован (каждые 5 минут)")
+    logger.info("🏓 Автопинг активирован")
     
-    # Запускаем бота в отдельном потоке
     if bot:
         bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
         bot_thread.start()
-        time.sleep(3)  # Даем боту время на запуск
+        time.sleep(3)
     
-    # Запускаем Flask
-    logger.info("🌐 Запуск веб-сервера...")
+    logger.info("🌐 Запуск веб-сервера")
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
