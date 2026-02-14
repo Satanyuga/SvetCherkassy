@@ -3,7 +3,7 @@ import json
 import time
 import threading
 import requests
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 from telebot import TeleBot, types
 import re
 import logging
@@ -396,38 +396,23 @@ if bot:
         bot.send_message(call.message.chat.id, info, reply_markup=get_menu(uid))
 
 # --- ЗАПУСК БОТА ---
-def start_bot_polling():
-    """Запуск бота"""
+def setup_webhook():
+    """Настройка webhook вместо polling"""
     if not bot:
         logger.error("❌ Бот не создан")
         return
     
-    retry_delay = 5
-    
-    for attempt in range(3):
-        try:
-            logger.info(f"🔄 Запуск #{attempt + 1}")
-            
-            bot.delete_webhook(drop_pending_updates=True)
-            time.sleep(2)
-            
-            logger.info("✅ Бот запущен")
-            bot.infinity_polling(
-                timeout=60,
-                long_polling_timeout=60,
-                skip_pending=True,
-                allowed_updates=['message', 'callback_query']
-            )
-            break
-        except Exception as e:
-            logger.error(f"❌ Ошибка: {e}")
-            
-            if "409" in str(e):
-                logger.warning("⚠️ Конфликт 409")
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                time.sleep(10)
+    try:
+        # Удаляем старый webhook
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Устанавливаем новый webhook
+        webhook_url = f"{APP_URL}/webhook/{TOKEN}"
+        bot.set_webhook(url=webhook_url)
+        logger.info(f"✅ Webhook установлен: {webhook_url}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка webhook: {e}")
 
 # --- WEB ---
 @app.route('/')
@@ -445,6 +430,17 @@ def manifest():
 @app.route('/sw.js')
 def service_worker():
     return send_from_directory('.', 'sw.js')
+
+@app.route(f'/webhook/{TOKEN}', methods=['POST'])
+def webhook():
+    """Обработчик webhook от Telegram"""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return '', 403
 
 @app.route('/ping')
 def ping(): 
@@ -475,10 +471,9 @@ if __name__ == '__main__':
     ping_thread.start()
     logger.info("🏓 Автопинг активирован")
     
+    # WEBHOOK вместо polling!
     if bot:
-        bot_thread = threading.Thread(target=start_bot_polling, daemon=True)
-        bot_thread.start()
-        time.sleep(3)
+        setup_webhook()
     
     logger.info("🌐 Запуск веб-сервера")
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
