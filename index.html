@@ -265,7 +265,7 @@
                 
                 disp.innerHTML = htmlParts.join('<br>');
                 calculateStats(sched);
-                calculate(targetDate);
+                calculate();  // БЕЗ параметра!
             } else {
                 disp.innerText = "График еще не сформирован";
                 document.getElementById('timer').innerText = "00:00:00";
@@ -284,7 +284,7 @@
             });
         }
 
-        function calculate(targetDate) {
+        function calculate() {
             let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             let cur = kiev.getHours() * 60 + kiev.getMinutes();
             let sec = kiev.getSeconds();
@@ -406,10 +406,8 @@
         setInterval(() => {
             document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
             
-            let targetDate = CURRENT_TAB === 'today' ? getToday() : getTomorrow();
-            if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                calculate(targetDate);
-            }
+            // ТАЙМЕР РАБОТАЕТ НЕЗАВИСИМО ОТ ВКЛАДКИ!
+            calculate();
         }, 1000);
 
         updateData();
