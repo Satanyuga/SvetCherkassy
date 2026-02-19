@@ -3,3 +3,4 @@ requests
 pyTelegramBotAPI
 gunicorn
 telethon
+beautifulsoup4
