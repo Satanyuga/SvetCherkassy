@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 echo "🚀 Запуск системы..."
@@ -9,11 +10,11 @@ echo "✅ Основной бот запущен (PID: $MAIN_PID)"
 
 sleep 3
 
-# Запуск RSS парсера (БЕЗ авторизации!)
-echo "📡 Запуск RSS парсера..."
-python rss_parser.py &
-RSS_PID=$!
-echo "✅ RSS парсер запущен (PID: $RSS_PID)"
+# Запуск мониторинга канала
+echo "📡 Запуск мониторинга канала Обленерго..."
+python channel_monitor.py &
+MONITOR_PID=$!
+echo "✅ Мониторинг запущен (PID: $MONITOR_PID)"
 
 # Ждем
 wait $MAIN_PID
