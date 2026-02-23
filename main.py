@@ -25,7 +25,7 @@ ADMIN_ID = 815422710
 TOKEN = os.environ.get("BOT_TOKEN")
 GITHUB_TOKEN = os.environ.get("GH_TOKEN")
 GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")
-APP_URL = "https://svetcherkassy.onrender.com" 
+APP_URL = os.environ.get("APP_URL", "https://svetcherkassy-rw5k.onrender.com") 
 
 app = Flask(__name__)
 DATA_FILE = 'data.json'
@@ -477,4 +477,3 @@ if __name__ == '__main__':
     
     logger.info("🌐 Запуск веб-сервера")
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
