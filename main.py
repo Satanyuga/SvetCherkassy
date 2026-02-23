@@ -184,7 +184,7 @@ if bot:
         
         date_str = parse_date_from_message(text)
         if not date_str:
-            bot.reply_to(message, "⚠️ Дата не распознана")
+            bot.reply_to(message, "⚠️ Дата не распознана", reply_markup=get_menu(str(message.from_user.id)))
             return
         
         # Проверка приоритета
@@ -192,14 +192,15 @@ if bot:
         if date_str in priority.get('edited_dates', []):
             bot.reply_to(message, 
                 f"⚠️ График на {date_str} УЖЕ отредактирован вами.\n"
-                f"Пересылка игнорируется."
+                f"Пересылка игнорируется.",
+                reply_markup=get_menu(str(message.from_user.id))
             )
             return
         
         parsed_schedules = parse_schedule_message(text)
         
         if not parsed_schedules:
-            bot.reply_to(message, "⚠️ Графики не распознаны")
+            bot.reply_to(message, "⚠️ Графики не распознаны", reply_markup=get_menu(str(message.from_user.id)))
             return
         
         data = load_json(DATA_FILE)
@@ -224,7 +225,8 @@ if bot:
                 f"✅ ИЗ КАНАЛА на {date_str}\n\n"
                 f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
                 f"🌐 GitHub: {'✅' if github_success else '❌'}\n\n"
-                f"ℹ️ БЕЗ приоритета админа"
+                f"ℹ️ БЕЗ приоритета админа",
+                reply_markup=get_menu(str(message.from_user.id))
             )
             
             # Уведомления
@@ -265,13 +267,13 @@ if bot:
         date_str = parse_date_from_message(text)
         if not date_str:
             logger.warning("⚠️ Дата не распознана")
-            bot.reply_to(message, "⚠️ Дата не распознана.\nУкажите: '12 лютого'")
+            bot.reply_to(message, "⚠️ Дата не распознана.\nУкажите: '12 лютого'", reply_markup=get_menu(str(ADMIN_ID)))
             return
         
         parsed_schedules = parse_schedule_message(text)
         
         if not parsed_schedules:
-            bot.reply_to(message, "⚠️ Графики не распознаны.\n\nФормат:\n1.1: 01:00 – 04:30")
+            bot.reply_to(message, "⚠️ Графики не распознаны.\n\nФормат:\n1.1: 01:00 – 04:30", reply_markup=get_menu(str(ADMIN_ID)))
             logger.warning("❌ Графики не распознаны")
             return
         
@@ -302,7 +304,7 @@ if bot:
             confirmation += f"🌐 GitHub: {'✅' if github_success else '❌'}\n"
             confirmation += f"🎯 Приоритет: АДМИН\n\n"
             
-            bot.reply_to(message, confirmation)
+            bot.reply_to(message, confirmation, reply_markup=get_menu(str(ADMIN_ID)))
             
             users = load_json(USERS_FILE)
             notified_count = 0
@@ -328,7 +330,7 @@ if bot:
             bot.send_message(ADMIN_ID, report)
             logger.info(f"\n✅ Готово: {notified_count} уведомлений")
         else:
-            bot.reply_to(message, "❌ Ошибка сохранения")
+            bot.reply_to(message, "❌ Ошибка сохранения", reply_markup=get_menu(str(ADMIN_ID)))
 
     # --- ЮЗЕРЫ ---
     @bot.message_handler(commands=['start'])
@@ -367,7 +369,7 @@ if bot:
             bot.send_message(message.chat.id, f"🔔 Уведомления {status}", reply_markup=get_menu(uid))
         else:
             if message.from_user.id != ADMIN_ID:
-                bot.send_message(message.chat.id, "⛔ Используйте меню")
+                bot.send_message(message.chat.id, "⛔ Используйте меню", reply_markup=get_menu(uid))
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("set_g_"))
     def callback_handler(call):
