@@ -214,33 +214,44 @@
             }
         }
 
-        function calculateStats(schedStr) {
-            let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
-            let totalOff = 0;
+        function calculateStats(schedStr, date) {
+            // Пытаемся взять ВСЮ историю за день из DATA.history
+            let allIntervals = [];
             
-            ranges.forEach(range => {
+            if (DATA && DATA.history && DATA.history[date] && DATA.history[date][GROUP]) {
+                // Есть история - берем ВСЕ интервалы
+                allIntervals = DATA.history[date][GROUP];
+                console.log(`📊 История за ${date}:`, allIntervals);
+            } else {
+                // Нет истории - берем текущий график
+                let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                allIntervals = ranges;
+            }
+            
+            let totalOff = 0;
+            let processedIntervals = new Set(); // Чтобы не считать дубли
+            
+            allIntervals.forEach(range => {
+                range = range.trim();
+                if (processedIntervals.has(range)) return; // Уже считали
+                processedIntervals.add(range);
+                
                 let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
                 
-                // 00:00 это конец дня (1440)
                 if (e === 0) e = 1440;
                 
-                // Интервал через полночь (23:00 - 02:00)
                 if (e < s) {
-                    // До полуночи + после полуночи
+                    // Через полночь
                     totalOff += (1440 - s) + e;
                 } else {
-                    // Обычный интервал
                     totalOff += (e - s);
                 }
             });
             
-            // НЕ БОЛЬШЕ 1440 минут в сутках!
             if (totalOff > 1440) totalOff = 1440;
             
-            // Время СО светом = 1440 - время БЕЗ света
             let totalOn = 1440 - totalOff;
             
-            // Показываем
             let offH = Math.floor(totalOff / 60);
             let offM = totalOff % 60;
             let onH = Math.floor(totalOn / 60);
@@ -320,8 +331,8 @@
                 }
                 
                 disp.innerHTML = htmlParts.join('<br>');
-                calculateStats(sched);
-                calculate();  // БЕЗ параметра!
+                calculateStats(sched, targetDate);
+                calculate();
             } else {
                 disp.innerText = "График еще не сформирован";
                 document.getElementById('timer').innerText = "00:00:00";
