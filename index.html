@@ -215,42 +215,48 @@
         }
 
         function calculateStats(schedStr, date) {
-            // Пытаемся взять ВСЮ историю за день из DATA.history
             let allIntervals = [];
             
+            // Проверяем есть ли history
             if (DATA && DATA.history && DATA.history[date] && DATA.history[date][GROUP]) {
-                // Есть история - берем ВСЕ интервалы
                 allIntervals = DATA.history[date][GROUP];
-                console.log(`📊 История за ${date}:`, allIntervals);
+                console.log(`📊 История (${allIntervals.length} интервалов):`, allIntervals);
             } else {
-                // Нет истории - берем текущий график
+                // Нет history - парсим из текущего графика
                 let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 allIntervals = ranges;
+                console.log(`📊 Нет истории, используем текущий (${allIntervals.length}):`, allIntervals);
             }
             
             let totalOff = 0;
-            let processedIntervals = new Set(); // Чтобы не считать дубли
+            let processedIntervals = new Set();
             
             allIntervals.forEach(range => {
                 range = range.trim();
-                if (processedIntervals.has(range)) return; // Уже считали
+                if (processedIntervals.has(range)) {
+                    console.log('⏭️ Пропуск дубля:', range);
+                    return;
+                }
                 processedIntervals.add(range);
                 
                 let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
-                
                 if (e === 0) e = 1440;
                 
+                let minutes = 0;
                 if (e < s) {
-                    // Через полночь
-                    totalOff += (1440 - s) + e;
+                    minutes = (1440 - s) + e;
                 } else {
-                    totalOff += (e - s);
+                    minutes = e - s;
                 }
+                
+                console.log(`  ${range} = ${minutes} минут`);
+                totalOff += minutes;
             });
             
             if (totalOff > 1440) totalOff = 1440;
-            
             let totalOn = 1440 - totalOff;
+            
+            console.log(`✅ ИТОГО: Без света ${totalOff}м, Со светом ${totalOn}м`);
             
             let offH = Math.floor(totalOff / 60);
             let offM = totalOff % 60;
@@ -401,19 +407,22 @@
                     let start = i.start;
                     let end = i.end;
                     
-                    // Интервал переходит через полночь (23:00 - 02:00)
+                    // Интервал переходит через полночь (22:00 - 00:30)
                     if (end <= start) {
-                        if (cur >= start || cur < end) {
+                        if (cur >= start) {
+                            // Сейчас 23:00, конец 00:30 завтра
+                            // До полуночи: (1440 - 1380) = 60 мин
+                            // После полуночи: 30 мин
+                            // ИТОГО: 90 минут
                             isOff = true;
-                            // ИСПРАВЛЕНИЕ: добавляем 1440 для перехода через полночь
-                            if (cur >= start) {
-                                // Сейчас 23:13, конец 02:00 → до конца (1440-1393) + 120 = 167 минут
-                                target = (1440 - cur) + end;
-                            } else {
-                                // Сейчас 01:00, конец 02:00 → просто 120-60 = 60 минут
-                                target = end - cur;
-                            }
-                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До включения:', target, 'минут');
+                            target = (1440 - cur) + end;
+                            console.log('ОТКЛЮЧЕНИЕ через полночь! cur=', cur, 'end=', end, 'target=', target);
+                            break;
+                        } else if (cur < end) {
+                            // Сейчас 00:15, конец 00:30
+                            isOff = true;
+                            target = end - cur;
+                            console.log('ОТКЛЮЧЕНИЕ с вчера! target=', target);
                             break;
                         }
                     } else {
@@ -421,7 +430,7 @@
                         if (cur >= start && cur < end) {
                             isOff = true;
                             target = end - cur;
-                            console.log('ОТКЛЮЧЕНИЕ! До:', target, 'минут');
+                            console.log('ОТКЛЮЧЕНИЕ обычное! target=', target);
                             break;
                         }
                     }
