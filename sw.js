@@ -1,4 +1,4 @@
-const CACHE_NAME = 'svet-v10';
+const CACHE_NAME = 'svet-v11';
 const notified = new Set();
 
 self.addEventListener('install', (e) => self.skipWaiting());
