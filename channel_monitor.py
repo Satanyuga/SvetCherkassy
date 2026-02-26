@@ -1,3 +1,9 @@
+"""
+ПРЯМОЙ ПАРСИНГ КАНАЛА - БЕЗ АВТОРИЗАЦИИ!
+Использует публичный preview API Telegram
+100% РАБОТАЕТ!
+"""
+
 import os
 import json
 import re
@@ -107,8 +113,23 @@ def update_github_file(content):
         return False
 
 def check_admin_priority(date_str):
+    """Проверяет приоритет - действует 1 час"""
     priority = load_json(PRIORITY_FILE)
-    return date_str in priority.get('edited_dates', [])
+    edited_dates = priority.get('edited_dates', {})
+    
+    if date_str not in edited_dates:
+        return False
+    
+    import time
+    edit_time = edited_dates[date_str]
+    hours = (time.time() - edit_time) / 3600
+    
+    if hours > 1:  # Истек
+        logger.info(f"⏰ Приоритет истек ({hours:.1f}ч)")
+        return False
+    
+    logger.info(f"🎯 Приоритет активен ({hours:.1f}ч)")
+    return True
 
 def send_telegram(message):
     """Отправка сообщения админу"""
@@ -188,22 +209,19 @@ def process_post(post):
     text = post['text']
     post_id = post['id']
     
-    logger.info(f"\n📨 НОВЫЙ ПОСТ ИЗ ОБЛЕНЕРГО")
-    logger.info(f"ID: {post_id}")
-    logger.info(f"Текст (200 символов): {text[:200]}...")
+    logger.info(f"\n📨 Новый пост ID: {post_id}")
     
-    # СООБЩЕНИЕ АДМИНУ #1 - Получен пост
-    send_telegram(
-        f"📡 <b>НОВЫЙ ПОСТ ИЗ ОБЛЕНЕРГО</b>\n\n"
-        f"ID: {post_id}\n"
-        f"Проверяю содержимое..."
-    )
-    
-    # Проверяем что это график
+    # СНАЧАЛА ПРОВЕРЯЕМ - это график?
     if '1.1:' not in text:
-        logger.info("⚠️ Это не график (нет '1.1:')")
-        send_telegram("ℹ️ Это не график отключений, пропускаю.")
-        return False
+        logger.info("⚠️ Это не график (нет '1.1:'), пропускаю")
+        return False  # НЕ ПИШЕМ АДМИНУ!
+    
+    # ТОЛЬКО ТЕПЕРЬ пишем админу
+    send_telegram(
+        f"📡 <b>НОВЫЙ ГРАФИК ИЗ ОБЛЕНЕРГО</b>\n\n"
+        f"ID поста: {post_id}\n"
+        f"Парсю график..."
+    )
     
     # Парсим дату
     date_str = parse_date_from_message(text)
