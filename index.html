@@ -145,14 +145,17 @@
 
         async function updateData() {
             try {
-                let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?nocache=' + Date.now());
+                // Добавляем СЛУЧАЙНОЕ число чтобы браузер НЕ кешировал!
+                let nocache = Date.now() + Math.random();
+                let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?v=' + nocache);
                 DATA = await r.json();
                 console.log('Данные загружены:', DATA);
                 render();
             } catch (e) { 
                 console.error("Ошибка загрузки данных:", e);
                 try {
-                    let r2 = await fetch('/data.json?nocache=' + Date.now());
+                    let nocache2 = Date.now() + Math.random();
+                    let r2 = await fetch('/data.json?v=' + nocache2);
                     DATA = await r2.json();
                     console.log('Данные загружены локально:', DATA);
                     render();
@@ -334,20 +337,27 @@
                     let start = i.start;
                     let end = i.end;
                     
-                    // Интервал переходит через полночь
+                    // Интервал переходит через полночь (23:00 - 02:00)
                     if (end <= start) {
                         if (cur >= start || cur < end) {
                             isOff = true;
-                            target = end;
-                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До:', end);
+                            // ИСПРАВЛЕНИЕ: добавляем 1440 для перехода через полночь
+                            if (cur >= start) {
+                                // Сейчас 23:13, конец 02:00 → до конца (1440-1393) + 120 = 167 минут
+                                target = (1440 - cur) + end;
+                            } else {
+                                // Сейчас 01:00, конец 02:00 → просто 120-60 = 60 минут
+                                target = end - cur;
+                            }
+                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До включения:', target, 'минут');
                             break;
                         }
                     } else {
                         // Обычный интервал
                         if (cur >= start && cur < end) {
                             isOff = true;
-                            target = end;
-                            console.log('ОТКЛЮЧЕНИЕ! До:', end);
+                            target = end - cur;
+                            console.log('ОТКЛЮЧЕНИЕ! До:', target, 'минут');
                             break;
                         }
                     }
@@ -387,11 +397,8 @@
 
             if (target) {
                 let diff;
-                if (targetIsNextDay) {
-                    diff = target * 60 - sec;
-                } else {
-                    diff = (target - cur) * 60 - sec;
-                }
+                // target уже содержит количество минут до события
+                diff = target * 60 - sec;
                 
                 if (diff < 0) diff = 0;
                 let h = Math.floor(diff / 3600).toString().padStart(2,'0');
@@ -415,4 +422,3 @@
     </script>
 </body>
 </html>
-
