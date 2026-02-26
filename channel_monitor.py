@@ -273,8 +273,26 @@ def process_post(post):
     if date_str not in data['dates']:
         data['dates'][date_str] = {}
     
+    # ИСТОРИЯ изменений для правильной статистики
+    if 'history' not in data:
+        data['history'] = {}
+    if date_str not in data['history']:
+        data['history'][date_str] = {}
+    
     updated_groups = []
     for group, schedule in schedules.items():
+        # Сохраняем в history ВСЕ интервалы
+        if group not in data['history'][date_str]:
+            data['history'][date_str][group] = []
+        
+        # Добавляем новые интервалы к истории
+        new_intervals = schedule.split(',')
+        for interval in new_intervals:
+            interval = interval.strip()
+            if interval and interval not in data['history'][date_str][group]:
+                data['history'][date_str][group].append(interval)
+        
+        # В основной dates - ПОСЛЕДНИЙ график (для отображения)
         data['dates'][date_str][group] = schedule
         updated_groups.append(group)
     
@@ -288,7 +306,7 @@ def process_post(post):
         admin_group = users.get(str(ADMIN_ID), {}).get('group', '4.1') or '4.1'
         admin_schedule = data['dates'].get(date_str, {}).get(admin_group, 'График не найден')
         
-        # СООБЩЕНИЕ АДМИНУ #2 - График обновлен
+        # СООБЩЕНИЕ АДМИНУ
         send_telegram(
             f"✅ <b>ГРАФИК ОБНОВЛЕН ИЗ ОБЛЕНЕРГО!</b>\n\n"
             f"📅 Дата: <b>{date_str}</b>\n"
@@ -298,6 +316,46 @@ def process_post(post):
             f"🆔 Пост: {post_id}\n\n"
             f"<b>⚡ Ваша очередь {admin_group}:</b>\n{admin_schedule}"
         )
+        
+        # УВЕДОМЛЕНИЯ ВСЕМ ПОЛЬЗОВАТЕЛЯМ
+        notified_count = 0
+        for uid_str, user_data in users.items():
+            user_group = user_data.get('group')
+            
+            if not user_group or user_group not in updated_groups:
+                continue
+            
+            if int(uid_str) == ADMIN_ID:
+                continue  # Админу уже отправили
+            
+            try:
+                user_schedule = data['dates'].get(date_str, {}).get(user_group, 'График не найден')
+                
+                notification = (
+                    f"🔔 <b>ВАШ ГРАФИК ИЗМЕНИЛСЯ!</b>\n\n"
+                    f"📍 Очередь: <b>{user_group}</b>\n"
+                    f"📅 График на <b>{date_str}</b>\n\n"
+                    f"⚡ <b>Отключения:</b>\n{user_schedule}"
+                )
+                
+                # Отправляем через бота
+                import requests
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                payload = {
+                    "chat_id": int(uid_str),
+                    "text": notification,
+                    "parse_mode": "HTML"
+                }
+                requests.post(url, json=payload, timeout=10)
+                
+                notified_count += 1
+                time.sleep(0.05)  # Чтобы не спамить API
+                
+            except Exception as e:
+                logger.error(f"Ошибка отправки {uid_str}: {e}")
+        
+        logger.info(f"📊 Уведомлено пользователей: {notified_count}")
+        send_telegram(f"📊 Уведомлено пользователей: {notified_count}")
         
         return True
     
