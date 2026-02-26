@@ -419,12 +419,20 @@ def setup_webhook():
 
 # --- WEB ---
 @app.route('/')
-def index(): 
-    return send_from_directory('.', 'index.html')
+def index():
+    response = send_from_directory('.', 'index.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/data.json')
-def get_data(): 
-    return jsonify(load_json(DATA_FILE))
+def get_data():
+    response = jsonify(load_json(DATA_FILE))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/manifest.json')
 def manifest():
@@ -432,7 +440,11 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
-    return send_from_directory('.', 'sw.js')
+    response = send_from_directory('.', 'sw.js')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route(f'/webhook/{TOKEN}', methods=['POST'])
 def webhook():
