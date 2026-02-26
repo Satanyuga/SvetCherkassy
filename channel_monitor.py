@@ -26,6 +26,7 @@ GITHUB_REPO = os.environ.get("GH_REPO", "Satanyuga/SvetCherkassy")
 
 DATA_FILE = 'data.json'
 PRIORITY_FILE = 'admin_priority.json'
+USERS_FILE = 'users.json'
 LAST_POST_FILE = 'last_post_id.txt'
 
 UA_MONTHS = {
@@ -83,6 +84,7 @@ def parse_schedule_message(text):
 
 def update_github_file(content):
     if not GITHUB_TOKEN:
+        logger.error("❌ GH_TOKEN не установлен!")
         return False
     
     try:
@@ -94,7 +96,12 @@ def update_github_file(content):
         }
         
         response = requests.get(url, headers=headers, timeout=10)
-        sha = response.json().get("sha") if response.status_code == 200 else None
+        
+        if response.status_code != 200:
+            logger.error(f"❌ GitHub GET ошибка: {response.status_code} - {response.text[:200]}")
+            return False
+        
+        sha = response.json().get("sha")
         
         content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
         content_b64 = base64.b64encode(content_bytes).decode('utf-8')
@@ -108,8 +115,16 @@ def update_github_file(content):
             data["sha"] = sha
         
         response = requests.put(url, headers=headers, json=data, timeout=15)
-        return response.status_code in [200, 201]
-    except:
+        
+        if response.status_code not in [200, 201]:
+            logger.error(f"❌ GitHub PUT ошибка: {response.status_code} - {response.text[:200]}")
+            return False
+        
+        logger.info("✅ GitHub обновлен успешно")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ GitHub исключение: {e}")
         return False
 
 def check_admin_priority(date_str):
@@ -268,6 +283,11 @@ def process_post(post):
         
         github_ok = update_github_file(data)
         
+        # Получаем очередь админа
+        users = load_json('users.json')
+        admin_group = users.get(str(ADMIN_ID), {}).get('group', '4.1') or '4.1'
+        admin_schedule = data['dates'].get(date_str, {}).get(admin_group, 'График не найден')
+        
         # СООБЩЕНИЕ АДМИНУ #2 - График обновлен
         send_telegram(
             f"✅ <b>ГРАФИК ОБНОВЛЕН ИЗ ОБЛЕНЕРГО!</b>\n\n"
@@ -275,7 +295,8 @@ def process_post(post):
             f"📋 Очереди ({len(updated_groups)}): {', '.join(sorted(updated_groups))}\n"
             f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ Ошибка'}\n\n"
             f"📡 Источник: @{CHANNEL_USERNAME}\n"
-            f"🆔 Пост: {post_id}"
+            f"🆔 Пост: {post_id}\n\n"
+            f"<b>⚡ Ваша очередь {admin_group}:</b>\n{admin_schedule}"
         )
         
         return True
