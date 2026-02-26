@@ -118,6 +118,36 @@
         // ВЕРСИЯ СТРАНИЦЫ - увеличивай при каждом обновлении!
         const PAGE_VERSION = 12;
         
+        // ЖЕСТКОЕ ОБНОВЛЕНИЕ - чистит ВСЁ!
+        function forceRefresh() {
+            console.log('🔄 ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ');
+            
+            // Чистим localStorage
+            const savedGroup = localStorage.getItem('userGroup');
+            localStorage.clear();
+            if (savedGroup) {
+                localStorage.setItem('userGroup', savedGroup); // Сохраняем выбор очереди
+            }
+            
+            // Чистим sessionStorage
+            sessionStorage.clear();
+            
+            // Удаляем Service Worker кеш
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        caches.delete(name);
+                        console.log('🗑️ Удален кеш:', name);
+                    });
+                });
+            }
+            
+            // Жесткая перезагрузка БЕЗ кеша
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 100);
+        }
+        
         // Проверяем версию при загрузке
         const savedVersion = localStorage.getItem('pageVersion');
         if (savedVersion && parseInt(savedVersion) !== PAGE_VERSION) {
@@ -438,6 +468,38 @@
 
         updateData();
         setInterval(updateData, 10000);
+        
+        // АВТООБНОВЛЕНИЕ - проверяем каждые 20 секунд!
+        let lastDataHash = null;
+        
+        async function checkForUpdates() {
+            try {
+                const VERSION = 'v12';
+                let nocache = Date.now() + Math.random();
+                let r = await fetch(`https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?${VERSION}&t=${nocache}`);
+                let text = await r.text();
+                
+                // Хеш данных
+                let hash = text.length + text.substring(0, 100);
+                
+                if (lastDataHash === null) {
+                    lastDataHash = hash;
+                    console.log('✅ Первая проверка графика');
+                } else if (lastDataHash !== hash) {
+                    console.log('🆕 ГРАФИК ОБНОВЛЕН! ПЕРЕЗАГРУЗКА...');
+                    lastDataHash = hash;
+                    
+                    // СРАЗУ ПЕРЕЗАГРУЖАЕМ БЕЗ ВОПРОСОВ!
+                    forceRefresh();
+                }
+            } catch (e) {
+                console.log('⚠️ Ошибка проверки:', e);
+            }
+        }
+        
+        // Проверяем каждые 20 секунд
+        setInterval(checkForUpdates, 20000);
+        setTimeout(checkForUpdates, 5000); // Первая проверка через 5 сек
     </script>
 </body>
 </html>
