@@ -115,6 +115,20 @@
     </div>
 
     <script>
+        // ВЕРСИЯ СТРАНИЦЫ - увеличивай при каждом обновлении!
+        const PAGE_VERSION = 12;
+        
+        // Проверяем версию при загрузке
+        const savedVersion = localStorage.getItem('pageVersion');
+        if (savedVersion && parseInt(savedVersion) !== PAGE_VERSION) {
+            console.log('🔄 Обнаружена новая версия! Перезагрузка...');
+            localStorage.setItem('pageVersion', PAGE_VERSION);
+            // Жесткая перезагрузка БЕЗ кеша
+            window.location.reload(true);
+        } else {
+            localStorage.setItem('pageVersion', PAGE_VERSION);
+        }
+        
         let DATA = {};
         let GROUP = localStorage.getItem('userGroup') || "4.1";
         let CURRENT_TAB = 'today';
@@ -149,9 +163,10 @@
 
         async function updateData() {
             try {
-                // Добавляем СЛУЧАЙНОЕ число чтобы браузер НЕ кешировал!
+                // ВЕРСИЯ! Меняй цифру при каждом обновлении кода
+                const VERSION = 'v12';
                 let nocache = Date.now() + Math.random();
-                let r = await fetch('https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?v=' + nocache);
+                let r = await fetch(`https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?${VERSION}&t=${nocache}`);
                 DATA = await r.json();
                 console.log('Данные загружены:', DATA);
                 render();
@@ -159,7 +174,7 @@
                 console.error("Ошибка загрузки данных:", e);
                 try {
                     let nocache2 = Date.now() + Math.random();
-                    let r2 = await fetch('/data.json?v=' + nocache2);
+                    let r2 = await fetch(`/data.json?v12&t=${nocache2}`);
                     DATA = await r2.json();
                     console.log('Данные загружены локально:', DATA);
                     render();
