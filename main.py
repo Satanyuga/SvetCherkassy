@@ -124,15 +124,16 @@ def update_github_file(content):
         return False
 
 def mark_admin_edit(date_str):
-    """Отмечает приоритет админа"""
+    """Отмечает приоритет админа с временем"""
     priority = load_json(PRIORITY_FILE)
     if 'edited_dates' not in priority:
-        priority['edited_dates'] = []
+        priority['edited_dates'] = {}  # Теперь словарь!
     
-    if date_str not in priority['edited_dates']:
-        priority['edited_dates'].append(date_str)
-        save_json(PRIORITY_FILE, priority)
-        logger.info(f"📝 Приоритет админа: {date_str}")
+    # Сохраняем время редактирования
+    import time
+    priority['edited_dates'][date_str] = time.time()
+    save_json(PRIORITY_FILE, priority)
+    logger.info(f"📝 Приоритет админа: {date_str}")
 
 # --- ПАРСИНГ ГРАФИКА ---
 def parse_schedule_message(text):
