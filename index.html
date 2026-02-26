@@ -221,22 +221,26 @@
             ranges.forEach(range => {
                 let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
                 
-                // ИСПРАВЛЕНО: 00:00 это 1440 минут (24 часа), а не 0
+                // 00:00 это конец дня (1440)
                 if (e === 0) e = 1440;
-                if (s === 0 && e === 1440) {
-                    totalOff += 1440;
-                } else if (e <= s) {
-                    // Переход через полночь (21:00 - 00:00 = 21:00 - 24:00)
-                    totalOff += (1440 - s + e);
+                
+                // Интервал через полночь (23:00 - 02:00)
+                if (e < s) {
+                    // До полуночи + после полуночи
+                    totalOff += (1440 - s) + e;
                 } else {
+                    // Обычный интервал
                     totalOff += (e - s);
                 }
             });
             
+            // НЕ БОЛЬШЕ 1440 минут в сутках!
             if (totalOff > 1440) totalOff = 1440;
             
+            // Время СО светом = 1440 - время БЕЗ света
             let totalOn = 1440 - totalOff;
             
+            // Показываем
             let offH = Math.floor(totalOff / 60);
             let offM = totalOff % 60;
             let onH = Math.floor(totalOn / 60);
