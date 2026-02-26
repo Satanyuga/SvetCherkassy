@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- ЗАПРЕТ КЕШИРОВАНИЯ -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Svet Cherkassy</title>
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { 
+            background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; margin: 0; padding: 20px; overflow-x: hidden;
+        }
+        .clock { position: absolute; top: 15px; right: 15px; border: 1px solid #00ffcc; color: #00ffcc; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 14px; }
+        .settings-btn { position: absolute; top: 15px; left: 15px; font-size: 24px; cursor: pointer; z-index: 10; opacity: 0.7; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab { 
+            background: #222; padding: 10px 20px; border-radius: 10px; cursor: pointer; 
+            border: 1px solid #444; font-size: 14px; transition: all 0.3s;
+        }
+        .tab.active { background: #00ffcc; color: #000; border-color: #00ffcc; font-weight: bold; }
+        
+        #date-label { color: #00ffcc; font-size: 16px; margin-bottom: 10px; text-align: center; font-weight: bold; }
+        #status-label { color: #888; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; text-align: center; }
+        
+        .countdown { 
+            font-size: 20vw; font-weight: 900; font-family: 'Courier New', monospace; margin: 10px 0 20px 0; line-height: 1; text-align: center;
+        }
+        @media (min-width: 600px) { .countdown { font-size: 100px; } }
+        
+        .red { color: #ff4444; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
+        .green { color: #00ff66; text-shadow: 0 0 20px rgba(0,255,0,0.4); }
+        
+        .card { 
+            background: #161616; padding: 25px; border-radius: 20px; width: 100%; max-width: 360px; 
+            border: 1px solid #333; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+        }
+        .card-header { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 12px; text-align: center; letter-spacing: 1px; }
+        .schedule-text { font-size: 18px; color: #ffcc00; font-weight: bold; line-height: 1.8; text-align: center; }
+        
+        .schedule-line { 
+            display: inline-block; padding: 4px 8px; border-radius: 6px; margin: 2px 0; transition: all 0.3s; 
+        }
+        .schedule-line.active { 
+            background: rgba(255, 68, 68, 0.3); 
+            border-bottom: 3px solid #ff4444; 
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.5); 
+        }
+        
+        .current-time-marker { 
+            display: block; 
+            height: 3px; 
+            background: #00ff66; 
+            margin: 8px 0; 
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(0, 255, 102, 0.6);
+        }
+        
+        .stats { margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; font-size: 14px; }
+        .stats-row { display: flex; justify-content: space-between; margin: 5px 0; color: #888; }
+        .stats-value { font-weight: bold; }
+        .stats-value.red { color: #ff4444; }
+        .stats-value.green { color: #00ff66; }
+
+        #modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center; }
+        .modal-box { background:#111; padding:25px; border-radius:25px; border:1px solid #444; width:90%; max-width:320px; text-align:center; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0; }
+        .g-btn { background:#222; border:1px solid #444; color:#fff; padding:12px 5px; border-radius:12px; cursor:pointer; font-size: 14px; }
+        .g-btn.active { border-color:#00ffcc; color:#00ffcc; background:rgba(0,255,204,0.1); }
+        .close-btn { width: 100%; padding: 15px; background: #00ffcc; border: none; color: #000; font-weight: bold; border-radius: 12px; margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="settings-btn" onclick="document.getElementById('modal').style.display='flex'">⚙️</div>
+    <div class="clock" id="clock">--:--:--</div>
+
+    <div class="tabs">
+        <div class="tab active" id="tab-today" onclick="switchTab('today')">Сегодня</div>
+        <div class="tab" id="tab-tomorrow" onclick="switchTab('tomorrow')">Завтра</div>
+    </div>
+
+    <div id="date-label">График на: --.--.----</div>
+    <div id="status-label">Загрузка...</div>
+    <div id="timer" class="countdown">00:00:00</div>
+
+    <div class="card">
+        <div class="card-header"><span id="current-group">ГРУППА --</span></div>
+        <div id="sched-display" class="schedule-text">Синхронизация с ботом...</div>
+        
+        <div class="stats" id="stats-block" style="display:none;">
+            <div class="stats-row">
+                <span>Без света:</span>
+                <span class="stats-value red" id="stats-off">0ч 0м</span>
+            </div>
+            <div class="stats-row">
+                <span>Со светом:</span>
+                <span class="stats-value green" id="stats-on">0ч 0м</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal">
+        <div class="modal-box">
+            <h3 style="margin-top:0">ВАША ОЧЕРЕДЬ</h3>
+            <div class="grid" id="grid"></div>
+            <button class="close-btn" onclick="document.getElementById('modal').style.display='none'">СОХРАНИТЬ</button>
+        </div>
+    </div>
+
+    <script>
+        // ВЕРСИЯ СТРАНИЦЫ - увеличивай при каждом обновлении!
+        const PAGE_VERSION = 12;
+        
+        // ЖЕСТКОЕ ОБНОВЛЕНИЕ - чистит ВСЁ!
+        function forceRefresh() {
+            console.log('🔄 ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ');
+            
+            // Чистим localStorage
+            const savedGroup = localStorage.getItem('userGroup');
+            localStorage.clear();
+            if (savedGroup) {
+                localStorage.setItem('userGroup', savedGroup); // Сохраняем выбор очереди
+            }
+            
+            // Чистим sessionStorage
+            sessionStorage.clear();
+            
+            // Удаляем Service Worker кеш
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        caches.delete(name);
+                        console.log('🗑️ Удален кеш:', name);
+                    });
+                });
+            }
+            
+            // Жесткая перезагрузка БЕЗ кеша
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 100);
+        }
+        
+        // Проверяем версию при загрузке
+        const savedVersion = localStorage.getItem('pageVersion');
+        if (savedVersion && parseInt(savedVersion) !== PAGE_VERSION) {
+            console.log('🔄 Обнаружена новая версия! Перезагрузка...');
+            localStorage.setItem('pageVersion', PAGE_VERSION);
+            // Жесткая перезагрузка БЕЗ кеша
+            window.location.reload(true);
+        } else {
+            localStorage.setItem('pageVersion', PAGE_VERSION);
+        }
+        
+        let DATA = {};
+        let GROUP = localStorage.getItem('userGroup') || "4.1";
+        let CURRENT_TAB = 'today';
+
+        function parseTime(t) {
+            t = t.trim().replace(/[^\d:]/g, '');
+            let p = t.split(':');
+            let h = parseInt(p[0]) || 0;
+            let m = p[1] ? parseInt(p[1]) : 0;
+            return h * 60 + m;
+        }
+
+        function getDateStr(offsetDays = 0) {
+            let now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            now.setDate(now.getDate() + offsetDays);
+            let day = now.getDate().toString().padStart(2, '0');
+            let month = (now.getMonth() + 1).toString().padStart(2, '0');
+            let year = now.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+
+        function getToday() { return getDateStr(0); }
+        function getTomorrow() { return getDateStr(1); }
+        function getYesterday() { return getDateStr(-1); }
+
+        function switchTab(tab) {
+            CURRENT_TAB = tab;
+            document.getElementById('tab-today').classList.toggle('active', tab === 'today');
+            document.getElementById('tab-tomorrow').classList.toggle('active', tab === 'tomorrow');
+            render();
+        }
+
+        async function updateData() {
+            try {
+                // ВЕРСИЯ! Меняй цифру при каждом обновлении кода
+                const VERSION = 'v12';
+                let nocache = Date.now() + Math.random();
+                let r = await fetch(`https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?${VERSION}&t=${nocache}`);
+                DATA = await r.json();
+                console.log('Данные загружены:', DATA);
+                render();
+            } catch (e) { 
+                console.error("Ошибка загрузки данных:", e);
+                try {
+                    let nocache2 = Date.now() + Math.random();
+                    let r2 = await fetch(`/data.json?v12&t=${nocache2}`);
+                    DATA = await r2.json();
+                    console.log('Данные загружены локально:', DATA);
+                    render();
+                } catch (e2) {
+                    console.error("Ошибка загрузки локальных данных:", e2);
+                }
+            }
+        }
+
+        function calculateStats(schedStr, date) {
+            let allIntervals = [];
+            
+            // Проверяем есть ли history
+            if (DATA && DATA.history && DATA.history[date] && DATA.history[date][GROUP]) {
+                allIntervals = DATA.history[date][GROUP];
+                console.log(`📊 История (${allIntervals.length} интервалов):`, allIntervals);
+            } else {
+                // Нет history - парсим из текущего графика
+                let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                allIntervals = ranges;
+                console.log(`📊 Нет истории, используем текущий (${allIntervals.length}):`, allIntervals);
+            }
+            
+            let totalOff = 0;
+            let processedIntervals = new Set();
+            
+            allIntervals.forEach(range => {
+                range = range.trim();
+                if (processedIntervals.has(range)) {
+                    console.log('⏭️ Пропуск дубля:', range);
+                    return;
+                }
+                processedIntervals.add(range);
+                
+                let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                if (e === 0) e = 1440;
+                
+                let minutes = 0;
+                if (e < s) {
+                    minutes = (1440 - s) + e;
+                } else {
+                    minutes = e - s;
+                }
+                
+                console.log(`  ${range} = ${minutes} минут`);
+                totalOff += minutes;
+            });
+            
+            if (totalOff > 1440) totalOff = 1440;
+            let totalOn = 1440 - totalOff;
+            
+            console.log(`✅ ИТОГО: Без света ${totalOff}м, Со светом ${totalOn}м`);
+            
+            let offH = Math.floor(totalOff / 60);
+            let offM = totalOff % 60;
+            let onH = Math.floor(totalOn / 60);
+            let onM = totalOn % 60;
+            
+            document.getElementById('stats-off').innerText = `${offH}ч ${offM}м`;
+            document.getElementById('stats-on').innerText = `${onH}ч ${onM}м`;
+            document.getElementById('stats-block').style.display = 'block';
+        }
+
+        function render() {
+            let targetDate = CURRENT_TAB === 'today' ? getToday() : getTomorrow();
+            document.getElementById('date-label').innerText = `График на: ${targetDate}`;
+            document.getElementById('current-group').innerText = `ГРУППА ${GROUP}`;
+            
+            let disp = document.getElementById('sched-display');
+            let sched = null;
+
+            if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
+                sched = DATA.dates[targetDate][GROUP];
+            }
+            
+            if (sched) {
+                let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+                let cur = kiev.getHours() * 60 + kiev.getMinutes();
+                let ranges = sched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                
+                let htmlParts = [];
+                let hasActiveInterval = false;
+                
+                ranges.forEach((range, idx) => {
+                    let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    
+                    // ИСПРАВЛЕНО: 00:00 = 1440 (24 часа)
+                    if (e === 0) e = 1440;
+                    
+                    // Проверяем прошел ли интервал (только для "Сегодня")
+                    if (CURRENT_TAB === 'today') {
+                        // Если интервал переходит через полночь
+                        if (e > s) {
+                            // Обычный интервал
+                            if (cur > e) {
+                                // Интервал прошел - НЕ ПОКАЗЫВАЕМ
+                                return;
+                            }
+                        }
+                        // Для интервалов через полночь всегда показываем
+                    }
+                    
+                    // ПОЛОСКА между интервалами
+                    if (CURRENT_TAB === 'today' && idx > 0 && !hasActiveInterval) {
+                        let [prevS, prevE] = ranges[idx - 1].split(/[–\-—]/).map(t => parseTime(t.trim()));
+                        if (prevE === 0) prevE = 1440;
+                        
+                        if (cur > prevE && cur < s) {
+                            htmlParts.push('<div class="current-time-marker"></div>');
+                        }
+                    }
+                    
+                    let isActive = false;
+                    if (CURRENT_TAB === 'today') {
+                        if (e > s) {
+                            isActive = (cur >= s && cur < e);
+                        } else {
+                            isActive = (cur >= s || cur < e);
+                        }
+                    }
+                    
+                    if (isActive) hasActiveInterval = true;
+                    
+                    let className = isActive ? 'schedule-line active' : 'schedule-line';
+                    htmlParts.push(`<span class="${className}">⚡ ${range.trim()}</span>`);
+                });
+                
+                if (htmlParts.length === 0) {
+                    htmlParts.push('<span style="color: #888;">Все интервалы прошли</span>');
+                }
+                
+                disp.innerHTML = htmlParts.join('<br>');
+                calculateStats(sched, targetDate);
+                calculate();
+            } else {
+                disp.innerText = "График еще не сформирован";
+                document.getElementById('timer').innerText = "00:00:00";
+                document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
+                document.getElementById('stats-block').style.display = 'none';
+            }
+
+            let grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            ['1.1','1.2','2.1','2.2','3.1','3.2','4.1','4.2','5.1','5.2','6.1','6.2'].forEach(g => {
+                let b = document.createElement('button');
+                b.className = `g-btn ${g === GROUP ? 'active' : ''}`;
+                b.innerText = g;
+                b.onclick = () => { GROUP = g; localStorage.setItem('userGroup', g); render(); };
+                grid.appendChild(b);
+            });
+        }
+
+        function calculate() {
+            let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
+            let cur = kiev.getHours() * 60 + kiev.getMinutes();
+            let sec = kiev.getSeconds();
+            
+            // Получаем графики
+            let todaySched = (DATA && DATA.dates && DATA.dates[getToday()] && DATA.dates[getToday()][GROUP]) || null;
+            let tomorrowSched = (DATA && DATA.dates && DATA.dates[getTomorrow()] && DATA.dates[getTomorrow()][GROUP]) || null;
+            let yesterdaySched = (DATA && DATA.dates && DATA.dates[getYesterday()] && DATA.dates[getYesterday()][GROUP]) || null;
+            
+            let isOff = false, target = null, targetIsNextDay = false;
+            
+            // ТАЙМЕР ВСЕГДА РАБОТАЕТ С ТЕКУЩИМ ВРЕМЕНЕМ (не зависит от вкладки!)
+            
+            if (!todaySched && !tomorrowSched) {
+                document.getElementById('timer').innerText = "00:00:00";
+                document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
+                return;
+            }
+            
+            // Проверяем продолжение с вчерашнего дня
+            if (yesterdaySched) {
+                let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                
+                for (let range of yesterdayRanges) {
+                    let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    if (e === 0) e = 1440;
+                    
+                    if (e < s && cur < e) {
+                        isOff = true;
+                        target = e;
+                        console.log('ОТКЛЮЧЕНИЕ с вчерашнего дня! До включения:', target - cur, 'минут');
+                        break;
+                    }
+                }
+            }
+            
+            // Проверяем текущие интервалы СЕГОДНЯ
+            if (!isOff && todaySched) {
+                let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                let intervals = ranges.map(r => {
+                    let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    // НЕ МЕНЯЕМ e! Оставляем 00:30 как 30!
+                    return {start: s, end: e};
+                }).sort((a,b) => a.start - b.start);
+                
+                for (let i of intervals) {
+                    let start = i.start;
+                    let end = i.end;
+                    
+                    // Интервал переходит через полночь (22:00 - 00:30)
+                    if (end <= start) {
+                        // Если end = 0 (00:00) → это 1440 (полночь)
+                        let realEnd = (end === 0) ? 1440 : end;
+                        
+                        if (cur >= start) {
+                            // Сейчас 23:00, конец 00:30 завтра
+                            isOff = true;
+                            target = (1440 - cur) + realEnd;
+                            console.log('ОТКЛЮЧЕНИЕ через полночь! cur=', cur, 'realEnd=', realEnd, 'target=', target);
+                            break;
+                        } else if (cur < realEnd) {
+                            // Сейчас 00:15, конец 00:30
+                            isOff = true;
+                            target = realEnd - cur;
+                            console.log('ОТКЛЮЧЕНИЕ с вчера! target=', target);
+                            break;
+                        }
+                    } else {
+                        // Обычный интервал
+                        if (cur >= start && cur < end) {
+                            isOff = true;
+                            target = end - cur;
+                            console.log('ОТКЛЮЧЕНИЕ обычное! target=', target);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Если свет есть - ищем следующее отключение
+            if (!isOff && todaySched) {
+                let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                let intervals = ranges.map(r => {
+                    let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    if (e === 0) e = 1440;
+                    return {start: s, end: e};
+                }).sort((a,b) => a.start - b.start);
+                
+                let next = intervals.find(i => i.start > cur);
+                if (next) {
+                    target = next.start;
+                    console.log('Свет есть. До отключения:', target - cur, 'минут');
+                } else if (tomorrowSched) {
+                    // Ищем первое отключение завтра
+                    let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                    if (tomorrowRanges.length > 0) {
+                        let [s, e] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
+                        target = 1440 - cur + s; // Время до полуночи + время завтра
+                        targetIsNextDay = true;
+                        console.log('Следующее отключение завтра:', target, 'минут');
+                    }
+                }
+            }
+
+            let tEl = document.getElementById('timer');
+            let lEl = document.getElementById('status-label');
+            
+            lEl.innerText = isOff ? "Света не будет еще:" : (target ? "Свет будет еще:" : "График окончен");
+            tEl.className = "countdown " + (isOff ? "red" : "green");
+
+            if (target) {
+                let diff;
+                // target уже содержит количество минут до события
+                diff = target * 60 - sec;
+                
+                if (diff < 0) diff = 0;
+                let h = Math.floor(diff / 3600).toString().padStart(2,'0');
+                let m = Math.floor((diff % 3600) / 60).toString().padStart(2,'0');
+                let s = (diff % 60).toString().padStart(2,'0');
+                tEl.innerText = `${h}:${m}:${s}`;
+            } else { 
+                tEl.innerText = "00:00:00"; 
+            }
+        }
+
+        setInterval(() => {
+            document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            
+            // ТАЙМЕР РАБОТАЕТ НЕЗАВИСИМО ОТ ВКЛАДКИ!
+            calculate();
+        }, 1000);
+
+        updateData();
+        setInterval(updateData, 10000);
+        
+        // АВТООБНОВЛЕНИЕ - проверяем каждые 20 секунд!
+        let lastDataHash = null;
+        
+        async function checkForUpdates() {
+            try {
+                const VERSION = 'v12';
+                let nocache = Date.now() + Math.random();
+                let r = await fetch(`https://raw.githubusercontent.com/Satanyuga/SvetCherkassy/main/data.json?${VERSION}&t=${nocache}`);
+                let text = await r.text();
+                
+                // Хеш данных
+                let hash = text.length + text.substring(0, 100);
+                
+                if (lastDataHash === null) {
+                    lastDataHash = hash;
+                    console.log('✅ Первая проверка графика');
+                } else if (lastDataHash !== hash) {
+                    console.log('🆕 ГРАФИК ОБНОВЛЕН! ПЕРЕЗАГРУЗКА...');
+                    lastDataHash = hash;
+                    
+                    // СРАЗУ ПЕРЕЗАГРУЖАЕМ БЕЗ ВОПРОСОВ!
+                    forceRefresh();
+                }
+            } catch (e) {
+                console.log('⚠️ Ошибка проверки:', e);
+            }
+        }
+        
+        // Проверяем каждые 20 секунд
+        setInterval(checkForUpdates, 20000);
+        setTimeout(checkForUpdates, 5000); // Первая проверка через 5 сек
+    </script>
+</body>
+</html>
