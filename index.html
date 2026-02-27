@@ -363,13 +363,36 @@
                     let start = i.start;
                     let end = i.end;
                     
-                    // Интервал переходит через полночь (21:00 - 00:00)
+                    // Интервал переходит через полночь (23:30 - 00:00)
                     if (end <= start) {
-                        // Проверяем: либо мы после начала, либо до конца
                         if (cur >= start || cur < end) {
                             isOff = true;
-                            target = end;
-                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)! До включения:', end <= cur ? (1440 - cur + end) : (end - cur), 'минут');
+                            
+                            // ПРОВЕРЯЕМ ПРОДОЛЖЕНИЕ НА СЛЕДУЮЩИЙ ДЕНЬ!
+                            let tomorrow = getTomorrow();
+                            if (DATA && DATA.dates && DATA.dates[tomorrow] && DATA.dates[tomorrow][GROUP]) {
+                                let tomorrowSched = DATA.dates[tomorrow][GROUP];
+                                let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                                
+                                // Ищем первый интервал завтра
+                                if (tomorrowRanges.length > 0) {
+                                    let [firstS, firstE] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
+                                    
+                                    // Если завтра начинается с 00:00 → это продолжение!
+                                    if (firstS === 0) {
+                                        target = firstE; // Конец завтра!
+                                        console.log('ОТКЛЮЧЕНИЕ ПРОДОЛЖАЕТСЯ ДО ЗАВТРА! До:', firstE, 'минут завтра');
+                                    } else {
+                                        target = end; // Обычный конец сегодня
+                                    }
+                                } else {
+                                    target = end;
+                                }
+                            } else {
+                                target = end;
+                            }
+                            
+                            console.log('ОТКЛЮЧЕНИЕ (переход через полночь)!');
                             break;
                         }
                     } else {
@@ -401,13 +424,14 @@
             lEl.innerText = isOff ? "Света не будет еще:" : (target ? "Свет будет еще:" : "График окончен");
             tEl.className = "countdown " + (isOff ? "red" : "green");
 
-            if (target) {
+            if (target !== null && target !== undefined) {
                 let diff;
                 
                 // ПРАВИЛЬНЫЙ расчет для перехода через полночь
                 if (isOff && target <= cur) {
-                    // Переход через полночь: 23:00 → 00:30
+                    // Переход через полночь: 23:41 → 01:30 завтра
                     diff = (1440 - cur + target) * 60 - sec;
+                    console.log('До завтра:', (1440 - cur + target), 'минут');
                 } else {
                     // Обычный случай
                     diff = (target - cur) * 60 - sec;
