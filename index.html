@@ -311,12 +311,8 @@
         }
 
         function calculate(schedStr, targetDate) {
-            if (CURRENT_TAB !== 'today') {
-                document.getElementById('timer').innerText = "00:00:00";
-                document.getElementById('status-label').innerText = "График на завтра";
-                return;
-            }
-
+            // ТАЙМЕР РАБОТАЕТ НА ОБЕИХ ВКЛАДКАХ!
+            
             let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             let cur = kiev.getHours() * 60 + kiev.getMinutes();
             let sec = kiev.getSeconds();
@@ -458,6 +454,34 @@
             }
         }, 1000);
 
+        // СВАЙПЫ влево/вправо
+        let touchStartX = 0;
+        let touchEndX = 0;
+        
+        document.addEventListener('touchstart', e => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+        
+        document.addEventListener('touchend', e => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+        
+        function handleSwipe() {
+            const swipeThreshold = 50; // Минимум 50px
+            const diff = touchStartX - touchEndX;
+            
+            if (Math.abs(diff) > swipeThreshold) {
+                if (diff > 0) {
+                    // Свайп влево → Завтра
+                    switchTab('tomorrow');
+                } else {
+                    // Свайп вправо → Сегодня
+                    switchTab('today');
+                }
+            }
+        }
+        
         updateData();
         setInterval(updateData, 10000);
     </script>
