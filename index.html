@@ -290,8 +290,8 @@
                 });
                 
                 disp.innerHTML = htmlParts.join('<br>');
-                calculateStats(sched);
-                calculate(sched, targetDate);
+                calculateStats(sched, targetDate);
+                calculate(); // БЕЗ ПАРАМЕТРОВ!
             } else {
                 disp.innerText = "График еще не сформирован";
                 document.getElementById('timer').innerText = "00:00:00";
@@ -310,32 +310,34 @@
             });
         }
 
-        function calculate(schedStr, targetDate) {
-            // ТАЙМЕР РАБОТАЕТ НА ОБЕИХ ВКЛАДКАХ!
+        function calculate() {
+            // ТАЙМЕР РАБОТАЕТ ПО РЕАЛЬНОМУ ВРЕМЕНИ, НЕ ЗАВИСИТ ОТ ВКЛАДКИ!
             
             let kiev = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Kiev"}));
             let cur = kiev.getHours() * 60 + kiev.getMinutes();
             let sec = kiev.getSeconds();
 
-            let ranges = schedStr.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+            // БЕРЕМ ГРАФИКИ СЕГОДНЯ И ЗАВТРА
+            let todayDate = getToday();
+            let tomorrowDate = getTomorrow();
+            let yesterdayDate = getYesterday();
             
-            console.log('График:', schedStr);
-            console.log('Найденные интервалы:', ranges);
+            let todaySched = (DATA && DATA.dates && DATA.dates[todayDate] && DATA.dates[todayDate][GROUP]) || null;
+            let tomorrowSched = (DATA && DATA.dates && DATA.dates[tomorrowDate] && DATA.dates[tomorrowDate][GROUP]) || null;
+            let yesterdaySched = (DATA && DATA.dates && DATA.dates[yesterdayDate] && DATA.dates[yesterdayDate][GROUP]) || null;
             
-            let intervals = ranges.map(r => {
-                let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
-                return {start: s, end: e};
-            }).sort((a,b) => a.start - b.start);
-
-            console.log('Распарсенные интервалы:', intervals);
-            console.log('Текущее время (минуты):', cur);
-
+            if (!todaySched) {
+                document.getElementById('timer').innerText = "00:00:00";
+                document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
+                return;
+            }
+            
+            let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+            
             let isOff = false, target = null;
             
             // Сначала проверяем не продолжается ли отключение с вчерашнего дня
-            let yesterday = getYesterday();
-            if (DATA && DATA.dates && DATA.dates[yesterday] && DATA.dates[yesterday][GROUP]) {
-                let yesterdaySched = DATA.dates[yesterday][GROUP];
+            if (yesterdaySched) {
                 let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 
                 for (let range of yesterdayRanges) {
@@ -355,6 +357,11 @@
             
             // Проверяем текущие интервалы
             if (!isOff) {
+                let intervals = ranges.map(r => {
+                    let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    return {start: s, end: e};
+                }).sort((a,b) => a.start - b.start);
+                
                 for (let i of intervals) {
                     let start = i.start;
                     let end = i.end;
@@ -365,9 +372,7 @@
                             isOff = true;
                             
                             // ПРОВЕРЯЕМ ПРОДОЛЖЕНИЕ НА СЛЕДУЮЩИЙ ДЕНЬ!
-                            let tomorrow = getTomorrow();
-                            if (DATA && DATA.dates && DATA.dates[tomorrow] && DATA.dates[tomorrow][GROUP]) {
-                                let tomorrowSched = DATA.dates[tomorrow][GROUP];
+                            if (tomorrowSched) {
                                 let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                                 
                                 // Ищем первый интервал завтра
@@ -405,6 +410,11 @@
             
             // Если свет есть - ищем следующее отключение
             if (!isOff) {
+                let intervals = ranges.map(r => {
+                    let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    return {start: s, end: e};
+                }).sort((a,b) => a.start - b.start);
+                
                 let next = intervals.find(i => i.start > cur);
                 if (next) {
                     target = next.start;
