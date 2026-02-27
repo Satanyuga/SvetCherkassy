@@ -456,12 +456,8 @@
         setInterval(() => {
             document.getElementById('clock').innerText = new Date().toLocaleString("en-GB", {timeZone:"Europe/Kiev", hour:'2-digit', minute:'2-digit', second:'2-digit'});
             
-            if (CURRENT_TAB === 'today') {
-                let targetDate = getToday();
-                if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                    calculate(DATA.dates[targetDate][GROUP], targetDate);
-                }
-            }
+            // ТАЙМЕР РАБОТАЕТ ВСЕГДА, НЕ ЗАВИСИТ ОТ ВКЛАДКИ!
+            calculate();
         }, 1000);
 
         // СВАЙПЫ влево/вправо
