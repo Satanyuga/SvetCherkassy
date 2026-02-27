@@ -251,8 +251,21 @@
                 ranges.forEach((range, idx) => {
                     let [s, e] = range.split(/[–\-—]/).map(t => parseTime(t.trim()));
                     
+                    // СКРЫВАЕМ ПРОШЕДШИЕ ИНТЕРВАЛЫ (только для "Сегодня")
+                    if (CURRENT_TAB === 'today') {
+                        // Обычный интервал (не через полночь)
+                        if (e > s) {
+                            if (cur > e) {
+                                // Интервал прошел - НЕ ПОКАЗЫВАЕМ
+                                prevEnd = e;
+                                return;
+                            }
+                        }
+                        // Интервалы через полночь всегда показываем
+                    }
+                    
                     // ПОЛОСКА МЕЖДУ ИНТЕРВАЛАМИ (когда свет есть)
-                    if (CURRENT_TAB === 'today' && idx > 0) {
+                    if (CURRENT_TAB === 'today' && idx > 0 && prevEnd > 0) {
                         // Если текущее время между концом предыдущего и началом текущего
                         if (cur > prevEnd && cur < s) {
                             htmlParts.push('<div class="current-time-marker"></div>');
