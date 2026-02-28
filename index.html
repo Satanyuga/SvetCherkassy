@@ -326,15 +326,26 @@
             let tomorrowSched = (DATA && DATA.dates && DATA.dates[tomorrowDate] && DATA.dates[tomorrowDate][GROUP]) || null;
             let yesterdaySched = (DATA && DATA.dates && DATA.dates[yesterdayDate] && DATA.dates[yesterdayDate][GROUP]) || null;
             
-            if (!todaySched) {
+            if (!todaySched && !tomorrowSched) {
                 document.getElementById('timer').innerText = "00:00:00";
                 document.getElementById('status-label').innerText = "НЕТ ДАННЫХ";
                 return;
             }
             
-            let ranges = todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+            let ranges = todaySched ? todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [] : [];
             
             let isOff = false, target = null;
+            
+            // Если НЕТ графика сегодня - ищем первое отключение ЗАВТРА
+            if (!todaySched && tomorrowSched) {
+                let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
+                if (tomorrowRanges.length > 0) {
+                    let [firstS, firstE] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
+                    // До полуночи + время завтра
+                    target = (1440 - cur) + firstS;
+                    console.log('График сегодня закончен, следующее отключение завтра в', firstS, 'минут, осталось', target);
+                }
+            }
             
             // Сначала проверяем не продолжается ли отключение с вчерашнего дня
             if (yesterdaySched) {
@@ -433,8 +444,12 @@
             if (target !== null && target !== undefined) {
                 let diff;
                 
-                // ПРАВИЛЬНЫЙ расчет для перехода через полночь
-                if (isOff && target <= cur) {
+                // ПРАВИЛЬНЫЙ расчет
+                if (target > 1440) {
+                    // target уже содержит ВСЁ: (1440 - cur) + firstS
+                    diff = target * 60 - sec;
+                    console.log('До завтра (в минутах):', target);
+                } else if (isOff && target <= cur) {
                     // Переход через полночь: 23:41 → 01:30 завтра
                     diff = (1440 - cur + target) * 60 - sec;
                     console.log('До завтра:', (1440 - cur + target), 'минут');
