@@ -334,15 +334,15 @@
             
             let ranges = todaySched ? todaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [] : [];
             
-            let isOff = false, target = null;
+            let isOff = false, target = null, targetIsNextDay = false;
             
             // Если НЕТ графика сегодня - ищем первое отключение ЗАВТРА
             if (!todaySched && tomorrowSched) {
                 let tomorrowRanges = tomorrowSched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                 if (tomorrowRanges.length > 0) {
                     let [firstS, firstE] = tomorrowRanges[0].split(/[–\-—]/).map(t => parseTime(t.trim()));
-                    // До полуночи + время завтра
                     target = (1440 - cur) + firstS;
+                    targetIsNextDay = true; // ФЛАГ!
                     console.log('График сегодня закончен, следующее отключение завтра в', firstS, 'минут, осталось', target);
                 }
             }
@@ -366,8 +366,8 @@
                 }
             }
             
-            // Проверяем текущие интервалы
-            if (!isOff) {
+            // Проверяем текущие интервалы (если есть график сегодня)
+            if (!isOff && ranges.length > 0) {
                 let intervals = ranges.map(r => {
                     let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
                     return {start: s, end: e};
@@ -420,7 +420,7 @@
             }
             
             // Если свет есть - ищем следующее отключение
-            if (!isOff) {
+            if (!isOff && ranges.length > 0) {
                 let intervals = ranges.map(r => {
                     let [s, e] = r.split(/[–\-—]/).map(t => parseTime(t.trim()));
                     return {start: s, end: e};
@@ -445,14 +445,18 @@
                 let diff;
                 
                 // ПРАВИЛЬНЫЙ расчет
-                if (target > 1440) {
+                if (targetIsNextDay) {
+                    // ЗАВТРАШНИЙ ДЕНЬ: target УЖЕ содержит полное время
+                    diff = target * 60 - sec;
+                    console.log('До завтра (флаг):', target, 'минут');
+                } else if (target > 1440) {
                     // target уже содержит ВСЁ: (1440 - cur) + firstS
                     diff = target * 60 - sec;
-                    console.log('До завтра (в минутах):', target);
+                    console.log('До завтра (больше 1440):', target);
                 } else if (isOff && target <= cur) {
                     // Переход через полночь: 23:41 → 01:30 завтра
                     diff = (1440 - cur + target) * 60 - sec;
-                    console.log('До завтра:', (1440 - cur + target), 'минут');
+                    console.log('До завтра (переход через полночь):', (1440 - cur + target), 'минут');
                 } else {
                     // Обычный случай
                     diff = (target - cur) * 60 - sec;
