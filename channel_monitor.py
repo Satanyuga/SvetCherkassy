@@ -231,13 +231,6 @@ def process_post(post):
         logger.info("⚠️ Это не график (нет строк очередей), пропускаю")
         return False  # НЕ ПИШЕМ АДМИНУ!
     
-    # ТОЛЬКО ТЕПЕРЬ пишем админу
-    send_telegram(
-        f"📡 <b>НОВЫЙ ГРАФИК ИЗ ОБЛЕНЕРГО</b>\n\n"
-        f"ID поста: {post_id}\n"
-        f"Парсю график..."
-    )
-    
     # Парсим дату
     date_str = parse_date_from_message(text)
     if not date_str:
@@ -247,6 +240,13 @@ def process_post(post):
     
     logger.info(f"📅 Дата: {date_str}")
     
+    # Если такой график уже в data.json - ничего не делаем (рестарт Render стирает last_post_id.txt)
+    _new = parse_schedule_message(text)
+    _cur = load_json(DATA_FILE).get('dates', {}).get(date_str, {})
+    if _new and all(_cur.get(g) == v for g, v in _new.items()):
+        logger.info("ℹ️ График не изменился, пропускаю")
+        return False
+    
     # Проверяем приоритет
     if check_admin_priority(date_str):
         logger.info(f"⚠️ Приоритет админа - игнорируем Обленерго")
@@ -255,6 +255,13 @@ def process_post(post):
             f"Обленерго игнорируется."
         )
         return False
+    
+    # ТОЛЬКО ТЕПЕРЬ пишем админу
+    send_telegram(
+        f"📡 <b>НОВЫЙ ГРАФИК ИЗ ОБЛЕНЕРГО</b>\n\n"
+        f"ID поста: {post_id}\n"
+        f"Парсю график..."
+    )
     
     # Парсим графики
     schedules = parse_schedule_message(text)
