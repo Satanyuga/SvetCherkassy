@@ -227,8 +227,8 @@ def process_post(post):
     logger.info(f"\n📨 Новый пост ID: {post_id}")
     
     # СНАЧАЛА ПРОВЕРЯЕМ - это график?
-    if '1.1:' not in text:
-        logger.info("⚠️ Это не график (нет '1.1:'), пропускаю")
+    if not re.search(r'(?m)^\s*\d\.\d\s*:?\s*\d{1,2}:\d{2}', text):
+        logger.info("⚠️ Это не график (нет строк очередей), пропускаю")
         return False  # НЕ ПИШЕМ АДМИНУ!
     
     # ТОЛЬКО ТЕПЕРЬ пишем админу
@@ -372,26 +372,26 @@ def check_updates():
     
     logger.info(f"📰 Найдено постов: {len(posts)}")
     
-    # Берем последний пост
-    latest = posts[-1] if posts else None
-    if not latest:
-        return
-    
-    # Проверяем не обрабатывали ли
     last_id = get_last_post_id()
-    if last_id == latest['id']:
+    
+    if last_id is None:
+        # Первый запуск: берем только самый свежий пост с графиком
+        graph = [p for p in posts if re.search(r'(?m)^\s*\d\.\d\s*:?\s*\d{1,2}:\d{2}', p['text'])]
+        new_posts = graph[-1:] if graph else []
+        if not new_posts:
+            save_last_post_id(posts[-1]['id'])
+            return
+    else:
+        new_posts = [p for p in posts if int(p['id']) > int(last_id)]
+    
+    if not new_posts:
         logger.info("ℹ️ Новых постов нет")
         return
     
-    logger.info(f"🆕 НОВЫЙ ПОСТ: {latest['id']}")
-    
-    # Обрабатываем
-    if process_post(latest):
-        save_last_post_id(latest['id'])
-        logger.info("✅ Обновление применено")
-    else:
-        # Сохраняем ID чтоб не спамить
-        save_last_post_id(latest['id'])
+    for post in new_posts:
+        logger.info(f"🆕 НОВЫЙ ПОСТ: {post['id']}")
+        process_post(post)
+        save_last_post_id(post['id'])
 
 def main():
     logger.info("\n" + "="*60)
