@@ -201,8 +201,13 @@
             return String(dt.getUTCDate()).padStart(2, '0') + '.' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '.' + dt.getUTCFullYear();
         }
 
+        // '12: 00' -> '12:00' (опечатки при ручном вводе)
+        function normSched(str) {
+            return str ? str.replace(/(\d{1,2})\s*:\s*(\d{2})/g, '$1:$2') : str;
+        }
+
         function getSched(date) {
-            return (DATA && DATA.dates && DATA.dates[date] && DATA.dates[date][GROUP]) || null;
+            return normSched((DATA && DATA.dates && DATA.dates[date] && DATA.dates[date][GROUP]) || null);
         }
 
         // Все версии графика за день (бот сохраняет каждое изменение и минуту публикации).
@@ -217,7 +222,7 @@
 
             let maps = list.map(v => {
                 let a = new Uint8Array(1440);
-                parseRanges(v.s).forEach(([s, e]) => { for (let m = s; m < Math.min(e, 1440); m++) a[m] = 1; });
+                parseRanges(normSched(v.s)).forEach(([s, e]) => { for (let m = s; m < Math.min(e, 1440); m++) a[m] = 1; });
                 return a;
             });
 
@@ -226,7 +231,7 @@
             let prev = shiftDate(date, -1);
             let pvs = DATA && DATA.versions && DATA.versions[prev] && DATA.versions[prev][GROUP];
             let prevSched = (pvs && pvs.length) ? pvs[pvs.length - 1].s : (DATA && DATA.dates && DATA.dates[prev] && DATA.dates[prev][GROUP]);
-            parseRanges(prevSched).forEach(([s, e]) => { if (e > 1440) carry = Math.max(carry, e - 1440); });
+            parseRanges(normSched(prevSched)).forEach(([s, e]) => { if (e > 1440) carry = Math.max(carry, e - 1440); });
 
             let off = 0;
             for (let m = 0; m < 1440; m++) {
@@ -257,7 +262,7 @@
             let sched = null;
 
             if (DATA && DATA.dates && DATA.dates[targetDate] && DATA.dates[targetDate][GROUP]) {
-                sched = DATA.dates[targetDate][GROUP];
+                sched = normSched(DATA.dates[targetDate][GROUP]);
             }
             
             if (sched) {
@@ -271,7 +276,7 @@
                 if (CURRENT_TAB === 'today') {
                     let yesterday = getYesterday();
                     if (DATA && DATA.dates && DATA.dates[yesterday] && DATA.dates[yesterday][GROUP]) {
-                        let yesterdaySched = DATA.dates[yesterday][GROUP];
+                        let yesterdaySched = normSched(DATA.dates[yesterday][GROUP]);
                         let yesterdayRanges = yesterdaySched.match(/\d{1,2}:\d{2}\s*[–\-—]\s*\d{1,2}:\d{2}/g) || [];
                         
                         for (let range of yesterdayRanges) {
