@@ -357,7 +357,8 @@ def parse_schedule_message(text):
         
         if match:
             group = match.group(1).strip()
-            schedule_text = match.group(2).strip()
+            # чиним опечатки времени: '12: 00' -> '12:00'
+            schedule_text = re.sub(r'(\d{1,2})\s*:\s*(\d{2})', r'\1:\2', match.group(2).strip())
             
             if re.search(r'\d{1,2}:\d{2}', schedule_text):
                 schedules[group] = schedule_text
@@ -393,16 +394,6 @@ if bot:
         date_str = parse_date_from_message(text)
         if not date_str:
             bot.reply_to(message, "⚠️ Дата не распознана", reply_markup=get_menu(str(message.from_user.id)))
-            return
-        
-        # Проверка приоритета
-        priority = load_json(PRIORITY_FILE)
-        if date_str in priority.get('edited_dates', []):
-            bot.reply_to(message, 
-                f"⚠️ График на {date_str} УЖЕ отредактирован вами.\n"
-                f"Пересылка игнорируется.",
-                reply_markup=get_menu(str(message.from_user.id))
-            )
             return
         
         parsed_schedules = parse_schedule_message(text)
@@ -514,7 +505,7 @@ if bot:
             confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
             confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
             confirmation += f"🌐 GitHub: {'✅' if github_success else '❌ ' + str(GH_LAST_ERROR)[:150]}\n"
-            confirmation += f"🎯 Приоритет: АДМИН\n\n"
+            confirmation += f"🕒 Действует, пока не придёт более новый график (от вас или из канала)\n\n"
             
             bot.reply_to(message, confirmation, reply_markup=get_menu(str(ADMIN_ID)))
             
