@@ -82,60 +82,218 @@ def parse_schedule_message(text):
     
     return schedules
 
-def update_github_file(content):
-    if not GITHUB_TOKEN:
-        logger.error("❌ GH_TOKEN не установлен!")
-        return False
-    
+
+import threading
+
+# ============================================================
+# СОСТОЯНИЕ В ОТДЕЛЬНОЙ ВЕТКЕ GITHUB (storage)
+# Render пересобирает сервис при каждом коммите в main, а при рестарте
+# стирает локальные файлы (очередь пользователей, уведомления, графики).
+# Коммиты в ветку storage Render НЕ запускают, поэтому всё сохраняется.
+# ============================================================
+import hashlib
+import base64
+from datetime import timedelta
+
+GH_BRANCH = os.environ.get("GH_STORAGE_BRANCH", "storage")
+GH_BASE = os.environ.get("GH_BASE_BRANCH", "main")
+GH_API = f"https://api.github.com/repos/{GITHUB_REPO}"
+STATE_FILES = ['data.json', 'users.json', 'admin_priority.json', 'last_post_id.txt']
+GH_LAST_ERROR = None
+_gh_lock = threading.Lock()
+_gh_branch_ok = False
+_gh_hash = {}
+_gh_last_alert = 0
+
+
+def kyiv_now():
+    """Текущее время Киева (без часового пояса)."""
     try:
-        import base64
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data.json"
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            logger.error(f"❌ GitHub GET ошибка: {response.status_code} - {response.text[:200]}")
-            return False
-        
-        sha = response.json().get("sha")
-        
-        content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
-        content_b64 = base64.b64encode(content_bytes).decode('utf-8')
-        
-        data = {
-            "message": "🤖 Автообновление из Обленерго",
-            "content": content_b64,
-            "branch": "main"
-        }
-        if sha:
-            data["sha"] = sha
-        
-        response = requests.put(url, headers=headers, json=data, timeout=15)
-        
-        if response.status_code not in [200, 201]:
-            logger.error(f"❌ GitHub PUT ошибка: {response.status_code} - {response.text[:200]}")
-            return False
-        
-        logger.info("✅ GitHub обновлен успешно")
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Kiev")).replace(tzinfo=None)
+    except Exception:
+        u = datetime.utcnow()
+
+        def last_sunday(month):
+            d = datetime(u.year, month, 31, 1)
+            while d.weekday() != 6:
+                d -= timedelta(days=1)
+            return d
+
+        return u + timedelta(hours=3 if last_sunday(3) <= u < last_sunday(10) else 2)
+
+
+def fmt_date(dt):
+    return dt.strftime("%d.%m.%Y")
+
+
+def _gh_headers():
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+
+
+def _gh_fail(msg):
+    """Запоминает ошибку и (не чаще раза в 30 минут) сообщает админу."""
+    global GH_LAST_ERROR, _gh_last_alert
+    GH_LAST_ERROR = msg
+    logger.error(f"❌ GitHub: {msg}")
+    tok = os.environ.get("BOT_TOKEN")
+    if tok and time.time() - _gh_last_alert > 1800:
+        _gh_last_alert = time.time()
+        try:
+            requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                          json={"chat_id": ADMIN_ID, "text": f"⚠️ Не удалось сохранить данные в GitHub:\n{msg}"}, timeout=10)
+        except Exception:
+            pass
+    return False
+
+
+def gh_ensure_branch():
+    """Создаёт ветку storage из main, если её ещё нет."""
+    global _gh_branch_ok
+    if _gh_branch_ok:
         return True
-        
+    if not GITHUB_TOKEN:
+        return _gh_fail("GH_TOKEN не задан")
+    try:
+        r = requests.get(f"{GH_API}/branches/{GH_BRANCH}", headers=_gh_headers(), timeout=10)
+        if r.status_code == 200:
+            _gh_branch_ok = True
+            return True
+        if r.status_code != 404:
+            return _gh_fail(f"ветка {GH_BRANCH}: {r.status_code}")
+        b = requests.get(f"{GH_API}/git/ref/heads/{GH_BASE}", headers=_gh_headers(), timeout=10)
+        if b.status_code != 200:
+            return _gh_fail(f"нет ветки {GH_BASE}: {b.status_code}")
+        c = requests.post(f"{GH_API}/git/refs", headers=_gh_headers(), timeout=10,
+                          json={"ref": f"refs/heads/{GH_BRANCH}", "sha": b.json()["object"]["sha"]})
+        if c.status_code in (200, 201, 422):  # 422 = уже существует
+            _gh_branch_ok = True
+            logger.info(f"✅ Ветка {GH_BRANCH} создана")
+            return True
+        return _gh_fail(f"создание ветки: {c.status_code}")
     except Exception as e:
-        logger.error(f"❌ GitHub исключение: {e}")
+        return _gh_fail(f"ветка: {e}")
+
+
+def _gh_put(path, text, message, branch):
+    """Один файл в одну ветку. Возвращает True/False."""
+    for attempt in range(3):
+        try:
+            g = requests.get(f"{GH_API}/contents/{path}", params={"ref": branch}, headers=_gh_headers(), timeout=10)
+            if g.status_code not in (200, 404):
+                return _gh_fail(f"{path} GET {g.status_code}")
+            body = {"message": message, "branch": branch,
+                    "content": base64.b64encode(text.encode('utf-8')).decode('ascii')}
+            if g.status_code == 200:
+                body["sha"] = g.json().get("sha")
+            p = requests.put(f"{GH_API}/contents/{path}", headers=_gh_headers(), json=body, timeout=20)
+            if p.status_code in (200, 201):
+                return True
+            if p.status_code in (409, 422) and attempt < 2:
+                time.sleep(1)
+                continue
+            return _gh_fail(f"{path} PUT {p.status_code}")
+        except Exception as e:
+            if attempt == 2:
+                return _gh_fail(f"{path}: {e}")
+            time.sleep(1)
+    return False
+
+
+def gh_push_text(path, text, message="💾 состояние бота", fallback_main=False):
+    """Сохраняет файл в ветку storage. Если содержимое не менялось - ничего не делает.
+    fallback_main=True (только для data.json): при сбое storage пишет в main как раньше,
+    чтобы график точно дошёл до сайта."""
+    global GH_LAST_ERROR
+    h = hashlib.md5(text.encode('utf-8')).hexdigest()
+    if _gh_hash.get(path) == h:
+        return True
+    with _gh_lock:
+        if gh_ensure_branch() and _gh_put(path, text, message, GH_BRANCH):
+            _gh_hash[path] = h
+            GH_LAST_ERROR = None
+            logger.info(f"✅ GitHub: {path} сохранён")
+            return True
+        if fallback_main and GITHUB_TOKEN and _gh_put(path, text, message, GH_BASE):
+            _gh_hash[path] = h
+            logger.warning(f"⚠️ {path} записан в {GH_BASE} (storage недоступна)")
+            return True
+    return False
+
+
+def gh_push_file_async(path):
+    def _run():
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                gh_push_text(path, f.read())
+        except Exception as e:
+            logger.error(f"❌ GitHub {path}: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def gh_pull_all():
+    """После рестарта возвращает users.json, data.json и т.д. из ветки storage."""
+    if not GITHUB_TOKEN:
+        logger.warning("⚠️ GH_TOKEN не задан: очереди пользователей не переживут рестарт")
+        return
+    for path in STATE_FILES:
+        try:
+            r = requests.get(f"{GH_API}/contents/{path}", params={"ref": GH_BRANCH}, headers=_gh_headers(), timeout=10)
+            if r.status_code != 200:
+                continue
+            text = base64.b64decode(r.json()["content"]).decode('utf-8')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            _gh_hash[path] = hashlib.md5(text.encode('utf-8')).hexdigest()
+            logger.info(f"📥 Восстановлен {path}")
+        except Exception as e:
+            logger.error(f"❌ Восстановление {path}: {e}")
+
+
+def record_version(data, date_str, group, sched):
+    """Запоминает каждую версию графика и минуту суток, когда она опубликована.
+    Статистика сайта: прошедшие минуты - по версии, действовавшей тогда, будущие - по последней."""
+    versions = data.setdefault('versions', {}).setdefault(date_str, {}).setdefault(group, [])
+    if versions and versions[-1].get('s') == sched:
         return False
+    try:
+        p = int((kyiv_now() - datetime.strptime(date_str, "%d.%m.%Y")).total_seconds() // 60)
+    except Exception:
+        p = 0
+    versions.append({'p': max(0, min(1440, p)), 's': sched})
+    return True
+
+
+def prune_versions(data, keep_days=4):
+    """Удаляет версии старых дат, чтобы data.json не разрастался."""
+    versions = data.get('versions')
+    if not isinstance(versions, dict):
+        return
+    limit = kyiv_now() - timedelta(days=keep_days)
+    for d in list(versions.keys()):
+        try:
+            if datetime.strptime(d, "%d.%m.%Y") < limit:
+                del versions[d]
+        except Exception:
+            del versions[d]
+# ============================================================
+
+
+def update_github_file(content):
+    """Сохраняет data.json (в ветку storage - это НЕ перезапускает Render)"""
+    ok = gh_push_text('data.json', json.dumps(content, ensure_ascii=False, indent=2), "🤖 Автообновление из Обленерго", fallback_main=True)
+    if not ok:
+        logger.error(f"❌ GitHub: {GH_LAST_ERROR}")
+    return ok
 
 def check_admin_priority(date_str):
     """Проверяет приоритет - действует 1 час"""
     priority = load_json(PRIORITY_FILE)
     edited_dates = priority.get('edited_dates', {})
     
-    if date_str not in edited_dates:
+    if not isinstance(edited_dates, dict) or date_str not in edited_dates:
         return False
     
-    import time
     edit_time = edited_dates[date_str]
     hours = (time.time() - edit_time) / 3600
     
@@ -176,6 +334,7 @@ def save_last_post_id(post_id):
     try:
         with open(LAST_POST_FILE, 'w') as f:
             f.write(str(post_id))
+        gh_push_file_async(LAST_POST_FILE)
     except:
         pass
 
@@ -280,28 +439,14 @@ def process_post(post):
     if date_str not in data['dates']:
         data['dates'][date_str] = {}
     
-    # ИСТОРИЯ изменений для правильной статистики
-    if 'history' not in data:
-        data['history'] = {}
-    if date_str not in data['history']:
-        data['history'][date_str] = {}
-    
     updated_groups = []
     for group, schedule in schedules.items():
-        # Сохраняем в history ВСЕ интервалы
-        if group not in data['history'][date_str]:
-            data['history'][date_str][group] = []
-        
-        # Добавляем новые интервалы к истории
-        new_intervals = schedule.split(',')
-        for interval in new_intervals:
-            interval = interval.strip()
-            if interval and interval not in data['history'][date_str][group]:
-                data['history'][date_str][group].append(interval)
-        
-        # В основной dates - ПОСЛЕДНИЙ график (для отображения)
         data['dates'][date_str][group] = schedule
+        # версия графика + минута публикации (для статистики за сутки)
+        record_version(data, date_str, group, schedule)
         updated_groups.append(group)
+    
+    prune_versions(data)
     
     if save_json(DATA_FILE, data):
         logger.info(f"✅ ГРАФИКИ ОБНОВЛЕНЫ!")
@@ -318,7 +463,7 @@ def process_post(post):
             f"✅ <b>ГРАФИК ОБНОВЛЕН ИЗ ОБЛЕНЕРГО!</b>\n\n"
             f"📅 Дата: <b>{date_str}</b>\n"
             f"📋 Очереди ({len(updated_groups)}): {', '.join(sorted(updated_groups))}\n"
-            f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ Ошибка'}\n\n"
+            f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ ' + str(GH_LAST_ERROR)[:150]}\n\n"
             f"📡 Источник: @{CHANNEL_USERNAME}\n"
             f"🆔 Пост: {post_id}\n\n"
             f"<b>⚡ Ваша очередь {admin_group}:</b>\n{admin_schedule}"
@@ -346,16 +491,17 @@ def process_post(post):
                 )
                 
                 # Отправляем через бота
-                import requests
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
                 payload = {
                     "chat_id": int(uid_str),
                     "text": notification,
                     "parse_mode": "HTML"
                 }
-                requests.post(url, json=payload, timeout=10)
-                
-                notified_count += 1
+                resp = requests.post(url, json=payload, timeout=10)
+                if resp.status_code == 200:
+                    notified_count += 1
+                else:
+                    logger.error(f"Не доставлено {uid_str}: {resp.status_code}")
                 time.sleep(0.05)  # Чтобы не спамить API
                 
             except Exception as e:
@@ -408,6 +554,9 @@ def main():
     logger.info(f"🌐 URL: {CHANNEL_URL}")
     logger.info(f"⏱️ Проверка каждые 3 минуты")
     logger.info("="*60 + "\n")
+    
+    # Возвращаем users.json, data.json, last_post_id.txt после рестарта
+    gh_pull_all()
     
     # Уведомляем о запуске
     send_telegram(
