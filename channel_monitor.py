@@ -76,7 +76,8 @@ def parse_schedule_message(text):
         match = re.match(r'^(\d+\.\d+)\s*:?\s*(.+)$', line)
         if match:
             group = match.group(1).strip()
-            schedule_text = match.group(2).strip()
+            # чиним опечатки времени: '12: 00' -> '12:00'
+            schedule_text = re.sub(r'(\d{1,2})\s*:\s*(\d{2})', r'\1:\2', match.group(2).strip())
             if re.search(r'\d{1,2}:\d{2}', schedule_text):
                 schedules[group] = schedule_text
     
@@ -446,15 +447,6 @@ def process_post(post):
         logger.info("ℹ️ График не изменился, пропускаю")
         return False
     
-    # Проверяем приоритет
-    if check_admin_priority(date_str):
-        logger.info(f"⚠️ Приоритет админа - игнорируем Обленерго")
-        send_telegram(
-            f"⚠️ График на <b>{date_str}</b> УЖЕ установлен ВАМИ.\n\n"
-            f"Обленерго игнорируется."
-        )
-        return False
-    
     # ТОЛЬКО ТЕПЕРЬ пишем админу
     send_telegram(
         f"📡 <b>НОВЫЙ ГРАФИК ИЗ ОБЛЕНЕРГО</b>\n\n"
@@ -487,6 +479,11 @@ def process_post(post):
         updated_groups.append(group)
     
     prune_versions(data)
+    try:
+        meta = data.setdefault('meta', {})
+        meta['last_post'] = max(int(meta.get('last_post') or 0), int(post_id))
+    except Exception:
+        pass
     
     if save_json(DATA_FILE, data):
         logger.info(f"✅ ГРАФИКИ ОБНОВЛЕНЫ!")
@@ -566,6 +563,11 @@ def check_updates():
     logger.info(f"📰 Найдено постов: {len(posts)}")
     
     last_id = get_last_post_id()
+    if last_id is None:
+        # файл потерялся - берём номер из data.json, чтобы не обрабатывать старые посты заново
+        _m = load_json(DATA_FILE).get('meta', {}).get('last_post') if isinstance(load_json(DATA_FILE), dict) else None
+        if _m:
+            last_id = str(_m)
     
     if last_id is None:
         # Первый запуск: берем только самый свежий пост с графиком
