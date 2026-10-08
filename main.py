@@ -172,20 +172,24 @@ def _gh_commit_time(path, branch):
 def gh_push_text(path, text, message="💾 состояние бота", to_main=False):
     """to_main=True (только data.json): график пишется в main, как раньше (виден на GitHub и
     читается сайтом), но с пометкой [skip render] - Render НЕ перезапускается.
-    Остальное (очереди, уведомления) лежит в ветке storage. Если не менялось - ничего не делает."""
+    Остальное (очереди, уведомления) лежит в ветке storage.
+    Повторно то же содержимое в ту же ветку не отправляется (учёт отдельно по каждой ветке)."""
     global GH_LAST_ERROR
     h = hashlib.md5(text.encode('utf-8')).hexdigest()
-    if _gh_hash.get(path) == h:
-        return True
+    main_key, st_key = (path, GH_BASE), (path, GH_BRANCH)
     with _gh_lock:
         if to_main and GITHUB_TOKEN:
+            if _gh_hash.get(main_key) == h:
+                return True
             if _gh_put(path, text, message + " [skip render]", GH_BASE):
-                _gh_hash[path] = h
+                _gh_hash[main_key] = h
                 GH_LAST_ERROR = None
                 logger.info(f"✅ GitHub: {path} сохранён в {GH_BASE}")
                 return True
+        elif not to_main and _gh_hash.get(st_key) == h:
+            return True
         if gh_ensure_branch() and _gh_put(path, text, message, GH_BRANCH):
-            _gh_hash[path] = h
+            _gh_hash[st_key] = h
             if not to_main:
                 GH_LAST_ERROR = None
             logger.info(f"✅ GitHub: {path} сохранён в {GH_BRANCH}")
@@ -203,8 +207,9 @@ def gh_push_file_async(path):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def gh_pull_all():
-    """После рестарта возвращает users.json, data.json и т.д. (берёт самую свежую копию)."""
+def gh_pull_all(sync_main=False):
+    """После рестарта возвращает users.json, data.json и т.д. (берёт самую свежую копию).
+    sync_main=True: если свежий data.json нашёлся не в main - сразу записывает его и в main."""
     if not GITHUB_TOKEN:
         logger.warning("⚠️ GH_TOKEN не задан: очереди пользователей не переживут рестарт")
         return
@@ -218,12 +223,18 @@ def gh_pull_all():
                     continue
                 t = _gh_commit_time(path, br) if len(branches) > 1 else ''
                 if best is None or t > best[0]:
-                    best = (t, text)
+                    best = (t, text, br)
             if best:
                 with open(path, 'w', encoding='utf-8') as f:
                     f.write(best[1])
-                _gh_hash[path] = hashlib.md5(best[1].encode('utf-8')).hexdigest()
-                logger.info(f"📥 Восстановлен {path}")
+                # помечаем как отправленное ТОЛЬКО в ту ветку, откуда взяли
+                _gh_hash[(path, best[2])] = hashlib.md5(best[1].encode('utf-8')).hexdigest()
+                logger.info(f"📥 Восстановлен {path} (из {best[2]})")
+                if sync_main and path == 'data.json' and best[2] != GH_BASE:
+                    txt = best[1]
+                    threading.Thread(target=gh_push_text, daemon=True,
+                                     args=(path, txt, "🔄 Синхронизация графика"),
+                                     kwargs={"to_main": True}).start()
         except Exception as e:
             logger.error(f"❌ Восстановление {path}: {e}")
 
@@ -257,7 +268,7 @@ def prune_versions(data, keep_days=4):
 # ============================================================
 
 # Возвращаем сохранённое состояние после рестарта
-gh_pull_all()
+gh_pull_all(sync_main=True)
 
 bot = TeleBot(TOKEN, threaded=False) if TOKEN else None
 
