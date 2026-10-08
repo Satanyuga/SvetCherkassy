@@ -36,9 +36,9 @@ import threading
 
 # ============================================================
 # СОСТОЯНИЕ В ОТДЕЛЬНОЙ ВЕТКЕ GITHUB (storage)
-# Render пересобирает сервис при каждом коммите в main, а при рестарте
-# стирает локальные файлы (очередь пользователей, уведомления, графики).
-# Коммиты в ветку storage Render НЕ запускают, поэтому всё сохраняется.
+# Render стирает локальные файлы при рестарте (очереди, уведомления, графики).
+# data.json пишется в main с меткой [skip render] (без перезапуска Render),
+# остальное - в ветку storage. После рестарта всё возвращается.
 # ============================================================
 import hashlib
 import base64
@@ -149,23 +149,46 @@ def _gh_put(path, text, message, branch):
     return False
 
 
-def gh_push_text(path, text, message="💾 состояние бота", fallback_main=False):
-    """Сохраняет файл в ветку storage. Если содержимое не менялось - ничего не делает.
-    fallback_main=True (только для data.json): при сбое storage пишет в main как раньше,
-    чтобы график точно дошёл до сайта."""
+def _gh_read(path, branch):
+    """Содержимое файла из ветки или None."""
+    r = requests.get(f"{GH_API}/contents/{path}", params={"ref": branch}, headers=_gh_headers(), timeout=10)
+    if r.status_code != 200:
+        return None
+    return base64.b64decode(r.json()["content"]).decode('utf-8')
+
+
+def _gh_commit_time(path, branch):
+    """Дата последнего коммита файла в ветке (строка ISO) - чтобы выбрать свежую копию."""
+    try:
+        r = requests.get(f"{GH_API}/commits", params={"path": path, "sha": branch, "per_page": 1},
+                         headers=_gh_headers(), timeout=10)
+        if r.status_code == 200 and r.json():
+            return r.json()[0]['commit']['committer']['date']
+    except Exception:
+        pass
+    return ''
+
+
+def gh_push_text(path, text, message="💾 состояние бота", to_main=False):
+    """to_main=True (только data.json): график пишется в main, как раньше (виден на GitHub и
+    читается сайтом), но с пометкой [skip render] - Render НЕ перезапускается.
+    Остальное (очереди, уведомления) лежит в ветке storage. Если не менялось - ничего не делает."""
     global GH_LAST_ERROR
     h = hashlib.md5(text.encode('utf-8')).hexdigest()
     if _gh_hash.get(path) == h:
         return True
     with _gh_lock:
+        if to_main and GITHUB_TOKEN:
+            if _gh_put(path, text, message + " [skip render]", GH_BASE):
+                _gh_hash[path] = h
+                GH_LAST_ERROR = None
+                logger.info(f"✅ GitHub: {path} сохранён в {GH_BASE}")
+                return True
         if gh_ensure_branch() and _gh_put(path, text, message, GH_BRANCH):
             _gh_hash[path] = h
-            GH_LAST_ERROR = None
-            logger.info(f"✅ GitHub: {path} сохранён")
-            return True
-        if fallback_main and GITHUB_TOKEN and _gh_put(path, text, message, GH_BASE):
-            _gh_hash[path] = h
-            logger.warning(f"⚠️ {path} записан в {GH_BASE} (storage недоступна)")
+            if not to_main:
+                GH_LAST_ERROR = None
+            logger.info(f"✅ GitHub: {path} сохранён в {GH_BRANCH}")
             return True
     return False
 
@@ -181,20 +204,26 @@ def gh_push_file_async(path):
 
 
 def gh_pull_all():
-    """После рестарта возвращает users.json, data.json и т.д. из ветки storage."""
+    """После рестарта возвращает users.json, data.json и т.д. (берёт самую свежую копию)."""
     if not GITHUB_TOKEN:
         logger.warning("⚠️ GH_TOKEN не задан: очереди пользователей не переживут рестарт")
         return
     for path in STATE_FILES:
         try:
-            r = requests.get(f"{GH_API}/contents/{path}", params={"ref": GH_BRANCH}, headers=_gh_headers(), timeout=10)
-            if r.status_code != 200:
-                continue
-            text = base64.b64decode(r.json()["content"]).decode('utf-8')
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(text)
-            _gh_hash[path] = hashlib.md5(text.encode('utf-8')).hexdigest()
-            logger.info(f"📥 Восстановлен {path}")
+            branches = [GH_BASE, GH_BRANCH] if path == 'data.json' else [GH_BRANCH]
+            best = None
+            for br in branches:
+                text = _gh_read(path, br)
+                if text is None:
+                    continue
+                t = _gh_commit_time(path, br) if len(branches) > 1 else ''
+                if best is None or t > best[0]:
+                    best = (t, text)
+            if best:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(best[1])
+                _gh_hash[path] = hashlib.md5(best[1].encode('utf-8')).hexdigest()
+                logger.info(f"📥 Восстановлен {path}")
         except Exception as e:
             logger.error(f"❌ Восстановление {path}: {e}")
 
@@ -285,7 +314,7 @@ def save_json(filename, data):
 
 def update_github_file(content):
     """Сохраняет data.json (в ветку storage - это НЕ перезапускает Render)"""
-    ok = gh_push_text('data.json', json.dumps(content, ensure_ascii=False, indent=2), "🔄 Обновление графиков", fallback_main=True)
+    ok = gh_push_text('data.json', json.dumps(content, ensure_ascii=False, indent=2), "🔄 Обновление графиков", to_main=True)
     if not ok:
         logger.error(f"❌ GitHub: {GH_LAST_ERROR}")
     return ok
