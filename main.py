@@ -502,14 +502,10 @@ if bot:
             github_success = update_github_file(data)
             
             confirmation = f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
-            confirmation += f"🌐 GitHub: {'✅' if github_success else '❌ ' + str(GH_LAST_ERROR)[:150]}"
+            confirmation += f"🌐 GitHub: {'✅' if github_success else '❌ ' + str(GH_LAST_ERROR)[:150]}\n"
+            confirmation += "🕒 Действует, пока не придёт более новый график (от вас или из канала)"
             
             bot.reply_to(message, confirmation, reply_markup=get_menu(str(ADMIN_ID)))
-            bot.send_message(
-                ADMIN_ID,
-                "🕒 Действует, пока не придёт более новый график (от вас или из канала)",
-                reply_markup=get_menu(str(ADMIN_ID))
-            )
             
             users = load_json(USERS_FILE)
             notified_count = 0
