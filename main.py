@@ -450,7 +450,6 @@ if bot:
                     except:
                         pass
             
-            bot.send_message(ADMIN_ID, f"📊 Уведомлено: {notified_count}")
 
     # --- АДМИН ---
     @bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
@@ -529,8 +528,6 @@ if bot:
                     except Exception as e:
                         logger.error(f"❌ Ошибка {uid_str}: {e}")
             
-            report = f"📊 Уведомлено: {notified_count}"
-            bot.send_message(ADMIN_ID, report)
             logger.info(f"\n✅ Готово: {notified_count} уведомлений")
         else:
             bot.reply_to(message, "❌ Ошибка сохранения", reply_markup=get_menu(str(ADMIN_ID)))
