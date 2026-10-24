@@ -495,15 +495,17 @@ def process_post(post):
         admin_group = users.get(str(ADMIN_ID), {}).get('group', '4.1') or '4.1'
         admin_schedule = data['dates'].get(date_str, {}).get(admin_group, 'График не найден')
         
-        # СООБЩЕНИЕ АДМИНУ
+        # Админу отдельно отправляем его график и служебную сводку.
         send_telegram(
-            f"✅ <b>ГРАФИК ОБНОВЛЕН ИЗ ОБЛЕНЕРГО!</b>\n\n"
-            f"📅 Дата: <b>{date_str}</b>\n"
+            f"✅ <b>ГРАФИК ИЗ ОБЛЕНЕРГО!</b>\n\n"
+            f"📅 Дата: <b>{date_str}</b>\n\n"
+            f"⚡ Ваша очередь {admin_group}:\n{admin_schedule}"
+        )
+        send_telegram(
             f"📋 Очереди ({len(updated_groups)}): {', '.join(sorted(updated_groups))}\n"
             f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ ' + str(GH_LAST_ERROR)[:150]}\n\n"
             f"📡 Источник: @{CHANNEL_USERNAME}\n"
-            f"🆔 Пост: {post_id}\n\n"
-            f"<b>⚡ Ваша очередь {admin_group}:</b>\n{admin_schedule}"
+            f"🆔 Пост: {post_id}"
         )
         
         # УВЕДОМЛЕНИЯ ВСЕМ ПОЛЬЗОВАТЕЛЯМ
@@ -521,10 +523,9 @@ def process_post(post):
                 user_schedule = data['dates'].get(date_str, {}).get(user_group, 'График не найден')
                 
                 notification = (
-                    f"🔔 <b>ВАШ ГРАФИК ИЗМЕНИЛСЯ!</b>\n\n"
-                    f"📍 Очередь: <b>{user_group}</b>\n"
-                    f"📅 График на <b>{date_str}</b>\n\n"
-                    f"⚡ <b>Отключения:</b>\n{user_schedule}"
+                    f"✅ <b>ГРАФИК ИЗ ОБЛЕНЕРГО!</b>\n\n"
+                    f"📅 Дата: <b>{date_str}</b>\n\n"
+                    f"⚡ Ваша очередь {user_group}:\n{user_schedule}"
                 )
                 
                 # Отправляем через бота
@@ -544,8 +545,7 @@ def process_post(post):
             except Exception as e:
                 logger.error(f"Ошибка отправки {uid_str}: {e}")
         
-        logger.info(f"📊 Уведомлено пользователей: {notified_count}")
-        send_telegram(f"📊 Уведомлено пользователей: {notified_count}")
+        logger.info(f"Рассылка завершена; доставлено уведомлений: {notified_count}")
         
         return True
     
