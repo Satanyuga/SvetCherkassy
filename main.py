@@ -440,9 +440,9 @@ if bot:
                 if user_group in updated_groups:
                     try:
                         schedule_text = data['dates'][date_str][user_group]
-                        notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
-                        notification += f"📍 Очередь: {user_group}\n\n"
-                        notification += f"⚡ Отключения:\n{schedule_text}"
+                        notification = f"✅ ГРАФИК ИЗ ОБЛЕНЕРГО!\n\n"
+                        notification += f"📅 Дата: {date_str}\n\n"
+                        notification += f"⚡ Ваша очередь {user_group}:\n{schedule_text}"
                         
                         bot.send_message(int(uid_str), notification)
                         notified_count += 1
@@ -501,12 +501,15 @@ if bot:
             
             github_success = update_github_file(data)
             
-            confirmation = f"✅ ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
-            confirmation += f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
-            confirmation += f"🌐 GitHub: {'✅' if github_success else '❌ ' + str(GH_LAST_ERROR)[:150]}\n"
-            confirmation += f"🕒 Действует, пока не придёт более новый график (от вас или из канала)\n\n"
+            confirmation = f"📋 Очереди: {', '.join(sorted(updated_groups))}\n"
+            confirmation += f"🌐 GitHub: {'✅' if github_success else '❌ ' + str(GH_LAST_ERROR)[:150]}"
             
             bot.reply_to(message, confirmation, reply_markup=get_menu(str(ADMIN_ID)))
+            bot.send_message(
+                ADMIN_ID,
+                "🕒 Действует, пока не придёт более новый график (от вас или из канала)",
+                reply_markup=get_menu(str(ADMIN_ID))
+            )
             
             users = load_json(USERS_FILE)
             notified_count = 0
@@ -517,9 +520,9 @@ if bot:
                 if user_group in updated_groups:
                     try:
                         schedule_text = data['dates'][date_str][user_group]
-                        notification = f"🔔 ГРАФИК ОБНОВЛЕН на {date_str}\n\n"
-                        notification += f"📍 Очередь: {user_group}\n\n"
-                        notification += f"⚡ Отключения:\n{schedule_text}"
+                        notification = f"✅ ГРАФИК ИЗ ОБЛЕНЕРГО!\n\n"
+                        notification += f"📅 Дата: {date_str}\n\n"
+                        notification += f"⚡ Ваша очередь {user_group}:\n{schedule_text}"
                         
                         bot.send_message(int(uid_str), notification)
                         notified_count += 1
