@@ -503,7 +503,8 @@ def process_post(post):
         )
         send_telegram(
             f"📋 Очереди ({len(updated_groups)}): {', '.join(sorted(updated_groups))}\n"
-            f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ ' + str(GH_LAST_ERROR)[:150]}\n\n"
+            f"🌐 GitHub: {'✅ Обновлен' if github_ok else '❌ ' + str(GH_LAST_ERROR)[:150]}\n"
+            f"🕒 Действует, пока не придёт более новый график (от вас или из канала)\n\n"
             f"📡 Источник: @{CHANNEL_USERNAME}\n"
             f"🆔 Пост: {post_id}"
         )
