@@ -62,5 +62,9 @@
   "803087588": {
     "group": "6.1",
     "notif_15": true
+  },
+  "661242096": {
+    "group": null,
+    "notif_15": false
   }
 }
